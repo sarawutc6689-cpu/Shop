@@ -477,7 +477,7 @@
       __backendId: r.id, type: 'product', name: esc(r.name), barcode: esc(r.barcode || ''),
       category: esc(r.category || ''), cost_price: Number(r.cost_price), sell_price: Number(r.sell_price),
       member_price: r.member_price == null ? null : Number(r.member_price),
-      stock: r.stock, min_stock: r.min_stock, unit: esc(r.unit || ''), created_at: r.created_at
+      stock: r.stock, min_stock: r.min_stock, unit: esc(r.unit || ''), image_url: esc(r.image_url || ''), created_at: r.created_at
     });
     const mapMember = r => ({
       __backendId: r.id, type: 'member', member_name: esc(r.name), member_phone: esc(r.phone),
@@ -705,8 +705,10 @@
             <div class="absolute top-2 right-2 bg-gray-100 text-xs px-2 py-1 rounded-full ${isLowStock ? 'bg-red-100 text-red-600' : ''}">
               ${product.stock} ${product.unit || 'ชิ้น'}
             </div>
-            <div class="w-full aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg mb-2 flex items-center justify-center text-3xl">
-              ${getCategoryEmoji(product.category)}
+            <div class="w-full aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg mb-2 flex items-center justify-center text-3xl overflow-hidden">
+              ${product.image_url
+                ? `<img src="${product.image_url}" alt="" loading="lazy" class="w-full h-full object-cover">`
+                : getCategoryEmoji(product.category)}
             </div>
             <p class="font-medium text-gray-800 text-sm truncate">${product.name}</p>
             <p class="text-blue-600 font-bold">฿${parseFloat(price || 0).toFixed(2)}</p>
@@ -1405,6 +1407,19 @@
                 <input type="text" id="product-name" value="${product?.name || ''}" required
                   class="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none">
               </div>
+              <div class="col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">รูปสินค้า</label>
+                <div class="flex items-center gap-3">
+                  <div id="product-image-preview" class="w-20 h-20 rounded-xl bg-gray-100 overflow-hidden flex items-center justify-center text-3xl flex-shrink-0">
+                    ${product?.image_url ? `<img src="${product.image_url}" alt="" class="w-full h-full object-cover">` : getCategoryEmoji(product?.category)}
+                  </div>
+                  <div class="flex-1 space-y-2">
+                    <input type="file" id="product-image" accept="image/*" onchange="previewProductImage(this)"
+                      class="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-600 file:font-medium hover:file:bg-blue-100">
+                    ${product?.image_url ? `<label class="flex items-center gap-2 text-sm text-red-600"><input type="checkbox" id="product-image-remove"> ลบรูปนี้</label>` : ''}
+                  </div>
+                </div>
+              </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">บาร์โค้ด</label>
                 <input type="text" id="product-barcode" value="${product?.barcode || ''}"
@@ -1461,6 +1476,57 @@
       `);
     }
     
+    const PRODUCT_IMAGE_BUCKET = 'product-images';
+
+    function previewProductImage(input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      document.getElementById('product-image-preview').innerHTML =
+        `<img src="${URL.createObjectURL(file)}" alt="" class="w-full h-full object-cover">`;
+      const rm = document.getElementById('product-image-remove');
+      if (rm) rm.checked = false;
+    }
+
+    // ย่อรูปก่อนอัปโหลด (ด้านยาวสุด 600px, JPEG) เพื่อให้โหลดเร็วและประหยัดพื้นที่
+    function resizeImage(file, maxSize = 600, quality = 0.82) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+          const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('แปลงรูปไม่สำเร็จ')), 'image/jpeg', quality);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('ไฟล์นี้ไม่ใช่รูปภาพที่รองรับ')); };
+        img.src = url;
+      });
+    }
+
+    async function uploadProductImage(file) {
+      const blob = await resizeImage(file);
+      const path = `${crypto.randomUUID()}.jpg`;
+      const { error } = await sb.storage.from(PRODUCT_IMAGE_BUCKET)
+        .upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' });
+      if (error) throw error;
+      return sb.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+    }
+
+    async function removeProductImage(url) {
+      if (!url) return;
+      const marker = `/${PRODUCT_IMAGE_BUCKET}/`;
+      const i = url.indexOf(marker);
+      if (i < 0) return;
+      const path = decodeURIComponent(url.slice(i + marker.length).split('?')[0]);
+      await sb.storage.from(PRODUCT_IMAGE_BUCKET).remove([path]);
+    }
+
     async function saveProduct(event, editId) {
       event.preventDefault();
       if (isLoading) return;
@@ -1478,15 +1544,30 @@
         unit: document.getElementById('product-unit').value.trim() || 'ชิ้น'
       };
 
+      const file = document.getElementById('product-image')?.files?.[0];
+      const removeOld = !!document.getElementById('product-image-remove')?.checked;
+      const oldUrl = editId ? (products.find(p => p.__backendId === editId)?.image_url || '') : '';
+      let newUrl = null;
+
       try {
+        if (file) {
+          newUrl = await uploadProductImage(file);
+          row.image_url = newUrl;
+        } else if (removeOld) {
+          row.image_url = null;
+        }   // ไม่แตะรูปเดิมถ้าไม่ได้เลือกรูปใหม่
+
         const { error } = editId
           ? await sb.from('products').update(row).eq('id', editId)
           : await sb.from('products').insert(row);
         if (error) throw error;
+
+        if ((file || removeOld) && oldUrl) removeProductImage(oldUrl).catch(() => {});
         showToast(editId ? 'อัปเดตสินค้าสำเร็จ' : 'เพิ่มสินค้าสำเร็จ', 'success');
         closeModal();
         loadAllData();
       } catch (e) {
+        if (newUrl) removeProductImage(newUrl).catch(() => {});   // บันทึกไม่สำเร็จ ลบรูปที่เพิ่งอัปโหลดทิ้ง
         if (e.code === '23505') showToast('บาร์โค้ดนี้ถูกใช้แล้ว', 'error');
         else handleError(e, 'บันทึกสินค้าไม่สำเร็จ');
       } finally {
@@ -1536,7 +1617,14 @@
         return `
           <tr class="border-b hover:bg-gray-50 ${isLowStock ? 'bg-red-50' : ''}">
             <td class="px-4 py-3 text-sm font-mono">${p.barcode || '-'}</td>
-            <td class="px-4 py-3 font-medium">${p.name}</td>
+            <td class="px-4 py-3 font-medium">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-gray-100 overflow-hidden flex items-center justify-center flex-shrink-0">
+                  ${p.image_url ? `<img src="${p.image_url}" alt="" loading="lazy" class="w-full h-full object-cover">` : getCategoryEmoji(p.category)}
+                </div>
+                <span>${p.name}</span>
+              </div>
+            </td>
             <td class="px-4 py-3">
               <span class="px-2 py-1 bg-gray-100 rounded-full text-xs">${getCategoryEmoji(p.category)} ${p.category}</span>
             </td>
@@ -1560,8 +1648,10 @@
     
     function deleteProduct(id) {
       showConfirmModal('ยืนยันการลบ', 'ต้องการลบสินค้านี้หรือไม่?', async () => {
+        const imageUrl = products.find(p => p.__backendId === id)?.image_url || '';
         const { error } = await sb.from('products').delete().eq('id', id);
         if (error) return handleError(error, 'ลบสินค้าไม่สำเร็จ');
+        if (imageUrl) removeProductImage(imageUrl).catch(() => {});
         showToast('ลบสินค้าสำเร็จ', 'success');
         loadAllData();
       });
