@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>หลังร้าน - จัดการออเดอร์</title>
+<style>
+  :root{--bg:#f4f4f0;--card:#fff;--ink:#222;--muted:#777;--brand:#e8590c;--line:#e3e1d9;--ok:#2b8a3e}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Sarabun","Noto Sans Thai",system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  button{font:inherit;cursor:pointer}
+  input,textarea,select{font:inherit;width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  label{display:block;font-size:14px;margin:10px 0 4px;color:#444}
+  .hidden{display:none!important}
+  .btn{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:8px 14px;font-weight:600}
+  .btn.sm{padding:5px 10px;font-size:14px}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .btn.ok{background:var(--ok)}
+  .btn.red{background:#c92a2a}
+  .wrap{max-width:900px;margin:0 auto;padding:12px 16px}
+  .login{max-width:360px;margin:12vh auto;background:#fff;padding:24px;border-radius:12px;border:1px solid var(--line)}
+  nav{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  nav .wrap{display:flex;gap:8px;align-items:center;padding-top:8px;padding-bottom:8px}
+  .tab{border:0;background:none;padding:8px 14px;border-radius:8px;font-weight:600;color:var(--muted)}
+  .tab.on{background:var(--ink);color:#fff}
+  .grow{flex:1}
+  .badge{background:#c92a2a;color:#fff;border-radius:99px;padding:0 7px;font-size:12px;margin-left:4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
+  .card.alert{border-color:#4dabf7;box-shadow:0 0 0 2px #d0ebff}
+  .row{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+  .muted{color:var(--muted);font-size:14px}
+  .status{display:inline-block;padding:3px 10px;border-radius:99px;font-weight:600;font-size:13px}
+  .s-pending_payment{background:#fff3bf;color:#7a5b00}
+  .s-payment_submitted{background:#d0ebff;color:#0b5394}
+  .s-paid,.s-preparing{background:#d3f9d8;color:var(--ok)}
+  .s-done{background:var(--ok);color:#fff}
+  .s-cancelled{background:#ffe3e3;color:#c92a2a}
+  .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .filters{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+  .modal img{max-width:100%;max-height:85vh;border-radius:8px}
+  .err{color:#c92a2a;font-size:14px;margin-top:8px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#bbb;margin-right:6px}
+  .dot.live{background:#2b8a3e}
+  .thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;background:#eee}
+  .mismatch{color:#c92a2a;font-weight:700}
+</style>
+</head>
+<body>
+
+<div id="loginView" class="login hidden">
+  <h2 style="margin-top:0">เข้าสู่ระบบหลังร้าน</h2>
+  <label for="lEmail">อีเมล</label><input id="lEmail" type="email" autocomplete="username">
+  <label for="lPass">รหัสผ่าน</label><input id="lPass" type="password" autocomplete="current-password">
+  <div class="err" id="lErr"></div>
+  <button class="btn" id="lGo" style="width:100%;margin-top:14px">เข้าสู่ระบบ</button>
+</div>
+
+<div id="appView" class="hidden">
+  <nav>
+    <div class="wrap">
+      <button class="tab on" data-t="tOrders">ออเดอร์ <span class="badge hidden" id="newBadge">0</span></button>
+      <button class="tab" data-t="tMenu">เมนู</button>
+      <button class="tab" data-t="tSettings">ตั้งค่าร้าน</button>
+      <span class="grow"></span>
+      <span class="muted"><span class="dot" id="liveDot"></span><span id="liveTxt">เชื่อมต่อ…</span></span>
+      <button class="btn ghost sm" id="logout">ออก</button>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <!-- ออเดอร์ -->
+    <section id="tOrders">
+      <div class="filters" id="filters"></div>
+      <div id="orderList"></div>
+    </section>
+
+    <!-- เมนู -->
+    <section id="tMenu" class="hidden">
+      <div class="row"><h2 style="margin:8px 0">จัดการเมนู</h2><button class="btn" id="addMenu">+ เพิ่มเมนู</button></div>
+      <div id="menuForm" class="card hidden">
+        <input type="hidden" id="mId">
+        <div class="grid2">
+          <div><label for="mName">ชื่อเมนู</label><input id="mName"></div>
+          <div><label for="mPrice">ราคา (บาท)</label><input id="mPrice" type="number" min="0" step="0.5"></div>
+          <div><label for="mCat">หมวดหมู่</label><input id="mCat" list="catList"><datalist id="catList"></datalist></div>
+          <div><label for="mSort">ลำดับ</label><input id="mSort" type="number" value="0"></div>
+        </div>
+        <label for="mDesc">คำอธิบาย</label><input id="mDesc">
+        <label for="mImg">ลิงก์รูปภาพ (ไม่บังคับ)</label><input id="mImg" placeholder="https://...">
+        <label><input type="checkbox" id="mAvail" checked style="width:auto"> เปิดขาย</label>
+        <div class="err" id="mErr"></div>
+        <div class="acts"><button class="btn" id="mSave">บันทึก</button><button class="btn ghost" id="mCancel">ยกเลิก</button></div>
+      </div>
+      <div id="menuAdminList"></div>
+    </section>
+
+    <!-- ตั้งค่า -->
+    <section id="tSettings" class="hidden">
+      <h2 style="margin:8px 0">ตั้งค่าร้านและเลขบัญชี</h2>
+      <div class="card">
+        <label for="sShop">ชื่อร้าน</label><input id="sShop">
+        <label for="sBank">ธนาคาร</label><input id="sBank">
+        <label for="sAcc">เลขที่บัญชี</label><input id="sAcc">
+        <label for="sName">ชื่อบัญชี</label><input id="sName">
+        <label for="sNotice">ข้อความใต้ชื่อร้าน</label><input id="sNotice">
+        <div class="err" id="sErr"></div>
+        <button class="btn" id="sSave" style="margin-top:14px">บันทึก</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="modal" class="modal hidden"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+const baht = n => Number(n).toLocaleString("th-TH", {maximumFractionDigits: 2}) + " บาท";
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtT = s => s ? new Date(s).toLocaleString("th-TH", {dateStyle:"short", timeStyle:"short"}) : "-";
+const STATUS = {pending_payment:"รอชำระเงิน", payment_submitted:"แจ้งโอนแล้ว (รอตรวจสอบ)", paid:"ชำระแล้ว", preparing:"กำลังทำ", done:"เสร็จแล้ว", cancelled:"ยกเลิก"};
+
+let orders = [], menu = [], filter = "active", channel = null, newCount = 0, audioCtx = null;
+
+/* ---------- เสียงแจ้งเตือน ---------- */
+function beep(){
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    [880, 1175].forEach((f, i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(audioCtx.destination);
+      const t = audioCtx.currentTime + i * 0.18;
+      g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      o.start(t); o.stop(t + 0.17);
+    });
+  } catch {}
+}
+function setBadge(n){ newCount = n; $("newBadge").textContent = n; $("newBadge").classList.toggle("hidden", n === 0); document.title = (n ? `(${n}) ` : "") + "หลังร้าน - จัดการออเดอร์"; }
+
+/* ---------- ล็อกอิน ---------- */
+async function boot(){
+  const {data:{session}} = await sb.auth.getSession();
+  session ? startApp() : $("loginView").classList.remove("hidden");
+}
+$("lGo").onclick = async () => {
+  $("lErr").textContent = "";
+  const {error} = await sb.auth.signInWithPassword({email: $("lEmail").value.trim(), password: $("lPass").value});
+  if (error){ $("lErr").textContent = "เข้าสู่ระบบไม่สำเร็จ: " + error.message; return; }
+  $("loginView").classList.add("hidden"); startApp();
+};
+$("lPass").addEventListener("keydown", e => { if (e.key === "Enter") $("lGo").click(); });
+$("logout").onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function startApp(){
+  $("appView").classList.remove("hidden");
+  beep(); // ปลดล็อกเสียงด้วยการคลิกล็อกอิน
+  await Promise.all([loadOrders(), loadMenu(), loadSettings()]);
+  subscribe();
+}
+document.addEventListener("click", () => { if (audioCtx && audioCtx.state === "suspended") audioCtx.resume(); }, {once:false});
+
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === b));
+  ["tOrders","tMenu","tSettings"].forEach(id => $(id).classList.toggle("hidden", id !== b.dataset.t));
+  if (b.dataset.t === "tOrders") setBadge(0);
+});
+
+/* ---------- ออเดอร์ ---------- */
+async function loadOrders(){
+  const {data, error} = await sb.from("orders").select("*, order_items(*)").order("created_at", {ascending:false}).limit(200);
+  if (error){ $("orderList").innerHTML = `<p class="err">โหลดออเดอร์ไม่สำเร็จ: ${esc(error.message)}</p>`; return; }
+  orders = data; renderFilters(); renderOrders();
+}
+function renderFilters(){
+  const defs = [["active","กำลังดำเนินการ"],["payment_submitted","รอตรวจสลิป"],["pending_payment","รอชำระ"],["done","เสร็จแล้ว"],["cancelled","ยกเลิก"],["all","ทั้งหมด"]];
+  const cnt = k => orders.filter(o => k === "all" ? true : k === "active" ? !["done","cancelled"].includes(o.status) : o.status === k).length;
+  $("filters").innerHTML = defs.map(([k,l]) => `<button class="btn sm ${filter===k?"":"ghost"}" data-f="${k}">${l} (${cnt(k)})</button>`).join("");
+}
+$("filters").onclick = e => { if (e.target.dataset.f){ filter = e.target.dataset.f; renderFilters(); renderOrders(); } };
+
+function renderOrders(){
+  const list = orders.filter(o => filter === "all" ? true : filter === "active" ? !["done","cancelled"].includes(o.status) : o.status === filter);
+  if (!list.length){ $("orderList").innerHTML = '<p class="muted">ไม่มีออเดอร์</p>'; return; }
+  $("orderList").innerHTML = list.map(o => {
+    const mismatch = o.transfer_amount != null && Number(o.transfer_amount) !== Number(o.total);
+    const acts = [];
+    if (o.status === "payment_submitted"){
+      acts.push(`<button class="btn sm" data-slip="${esc(o.slip_path)}">ดูสลิป</button>`);
+      acts.push(`<button class="btn sm ok" data-set="${o.id}:paid">ยืนยันรับเงิน</button>`);
+    }
+    if (o.status === "pending_payment") acts.push(`<button class="btn sm ok" data-set="${o.id}:paid">รับเงินแล้ว (ยืนยันเอง)</button>`);
+    if (o.status === "paid") acts.push(`<button class="btn sm ok" data-set="${o.id}:preparing">เริ่มทำอาหาร</button>`);
+    if (o.status === "preparing") acts.push(`<button class="btn sm ok" data-set="${o.id}:done">ทำเสร็จแล้ว</button>`);
+    if (o.slip_path && o.status !== "payment_submitted") acts.push(`<button class="btn sm ghost" data-slip="${esc(o.slip_path)}">ดูสลิป</button>`);
+    if (!["done","cancelled"].includes(o.status)) acts.push(`<button class="btn sm red" data-set="${o.id}:cancelled">ยกเลิก</button>`);
+    return `
+    <div class="card ${o.status==="payment_submitted"?"alert":""}">
+      <div class="row">
+        <strong>#${o.order_no} · ${esc(o.customer_name)} · <a href="tel:${esc(o.phone)}">${esc(o.phone)}</a></strong>
+        <span class="status s-${o.status}">${STATUS[o.status]}</span>
+      </div>
+      <div class="muted">สั่งเมื่อ ${fmtT(o.created_at)}</div>
+      <div style="margin-top:8px">${o.order_items.map(i => `<div class="row"><span>${esc(i.name)} × ${i.qty}</span><span>${baht(i.price*i.qty)}</span></div>`).join("")}</div>
+      <div class="row" style="font-weight:700;border-top:1px dashed var(--line);margin-top:6px;padding-top:6px"><span>รวม</span><span>${baht(o.total)}</span></div>
+      ${o.note ? `<div class="muted">หมายเหตุ: ${esc(o.note)}</div>` : ""}
+      ${o.transfer_amount != null ? `<div class="muted" style="margin-top:6px">แจ้งโอน: <span class="${mismatch?"mismatch":""}">${baht(o.transfer_amount)}${mismatch?" (ไม่ตรงยอด!)":""}</span> · เวลาโอน ${fmtT(o.transfer_time)}</div>` : ""}
+      <div class="acts">${acts.join("")}</div>
+    </div>`;
+  }).join("");
+}
+
+$("orderList").onclick = async e => {
+  const set = e.target.dataset.set, slip = e.target.dataset.slip;
+  if (set){
+    const [id, status] = set.split(":");
+    if (status === "cancelled" && !confirm("ยืนยันยกเลิกออเดอร์นี้?")) return;
+    const {error} = await sb.from("orders").update({status, updated_at:new Date().toISOString()}).eq("id", id);
+    if (error) alert("อัปเดตไม่สำเร็จ: " + error.message); else loadOrders();
+  }
+  if (slip){
+    const {data, error} = await sb.storage.from("slips").createSignedUrl(slip, 300);
+    if (error){ alert("เปิดสลิปไม่ได้: " + error.message); return; }
+    $("modal").innerHTML = `<img src="${data.signedUrl}" alt="สลิป">`;
+    $("modal").classList.remove("hidden");
+  }
+};
+$("modal").onclick = () => $("modal").classList.add("hidden");
+
+/* ---------- Realtime ---------- */
+function subscribe(){
+  if (channel) sb.removeChannel(channel);
+  channel = sb.channel("orders-live")
+    .on("postgres_changes", {event:"*", schema:"public", table:"orders"}, async payload => {
+      const ev = payload.eventType, row = payload.new;
+      if (ev === "INSERT"){ beep(); setBadge(newCount + 1); }
+      if (ev === "UPDATE" && row.status === "payment_submitted" && payload.old?.status !== "payment_submitted"){ beep(); setBadge(newCount + 1); }
+      // order_items ถูกเพิ่มหลัง INSERT orders เล็กน้อย จึงหน่วงนิดก่อนโหลด
+      setTimeout(loadOrders, ev === "INSERT" ? 800 : 0);
+    })
+    .subscribe(status => {
+      const live = status === "SUBSCRIBED";
+      $("liveDot").classList.toggle("live", live);
+      $("liveTxt").textContent = live ? "ออนไลน์ (realtime)" : "กำลังเชื่อมต่อ…";
+    });
+}
+
+/* ---------- เมนู ---------- */
+async function loadMenu(){
+  const {data, error} = await sb.from("menu_items").select("*").order("sort_order").order("created_at");
+  if (error){ $("menuAdminList").innerHTML = `<p class="err">${esc(error.message)}</p>`; return; }
+  menu = data;
+  $("catList").innerHTML = [...new Set(menu.map(m => m.category))].map(c => `<option value="${esc(c)}">`).join("");
+  $("menuAdminList").innerHTML = menu.map(m => `
+    <div class="card row">
+      <div style="display:flex;gap:10px;align-items:center">
+        ${m.image_url ? `<img class="thumb" src="${esc(m.image_url)}" alt="">` : ""}
+        <div><strong>${esc(m.name)}</strong> ${m.is_available ? "" : '<span class="status s-cancelled">ปิดขาย</span>'}<br>
+        <span class="muted">${esc(m.category)} · ${baht(m.price)}</span></div>
+      </div>
+      <div class="acts" style="margin:0">
+        <button class="btn sm ghost" data-toggle="${m.id}">${m.is_available ? "ปิดขาย" : "เปิดขาย"}</button>
+        <button class="btn sm ghost" data-edit="${m.id}">แก้ไข</button>
+        <button class="btn sm red" data-del="${m.id}">ลบ</button>
+      </div>
+    </div>`).join("") || '<p class="muted">ยังไม่มีเมนู</p>';
+}
+function openForm(m){
+  $("menuForm").classList.remove("hidden"); $("mErr").textContent = "";
+  $("mId").value = m?.id || ""; $("mName").value = m?.name || ""; $("mPrice").value = m?.price ?? "";
+  $("mCat").value = m?.category || "อาหารจานเดียว"; $("mSort").value = m?.sort_order ?? 0;
+  $("mDesc").value = m?.description || ""; $("mImg").value = m?.image_url || ""; $("mAvail").checked = m ? m.is_available : true;
+  $("mName").focus();
+}
+$("addMenu").onclick = () => openForm(null);
+$("mCancel").onclick = () => $("menuForm").classList.add("hidden");
+$("mSave").onclick = async () => {
+  const name = $("mName").value.trim(), price = parseFloat($("mPrice").value);
+  if (!name || isNaN(price) || price < 0){ $("mErr").textContent = "กรอกชื่อและราคาให้ถูกต้อง"; return; }
+  const row = {name, price, category: $("mCat").value.trim() || "อื่น ๆ", sort_order: parseInt($("mSort").value) || 0,
+               description: $("mDesc").value.trim() || null, image_url: $("mImg").value.trim() || null, is_available: $("mAvail").checked};
+  const id = $("mId").value;
+  const {error} = id ? await sb.from("menu_items").update(row).eq("id", id) : await sb.from("menu_items").insert(row);
+  if (error){ $("mErr").textContent = error.message; return; }
+  $("menuForm").classList.add("hidden"); loadMenu();
+};
+$("menuAdminList").onclick = async e => {
+  const d = e.target.dataset;
+  if (d.edit) openForm(menu.find(m => m.id === d.edit));
+  if (d.toggle){ const m = menu.find(x => x.id === d.toggle); await sb.from("menu_items").update({is_available: !m.is_available}).eq("id", m.id); loadMenu(); }
+  if (d.del && confirm("ลบเมนูนี้? (ประวัติออเดอร์เดิมยังอยู่)")){ await sb.from("menu_items").delete().eq("id", d.del); loadMenu(); }
+};
+
+/* ---------- ตั้งค่า ---------- */
+const SKEYS = {shop_name:"sShop", bank_name:"sBank", account_no:"sAcc", account_name:"sName", shop_notice:"sNotice"};
+async function loadSettings(){
+  const {data} = await sb.from("settings").select("*");
+  (data || []).forEach(r => { if (SKEYS[r.key]) $(SKEYS[r.key]).value = r.value; });
+}
+$("sSave").onclick = async () => {
+  const rows = Object.entries(SKEYS).map(([key, id]) => ({key, value: $(id).value.trim()}));
+  const {error} = await sb.from("settings").upsert(rows);
+  $("sErr").style.color = error ? "" : "#2b8a3e";
+  $("sErr").textContent = error ? error.message : "บันทึกแล้ว";
+};
+
+boot();
+</script>
+</body>
+</html>
