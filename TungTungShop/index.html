@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สั่งอาหารออนไลน์</title>
+<style>
+  :root{--bg:#fafaf7;--card:#fff;--ink:#222;--muted:#777;--brand:#e8590c;--brand-d:#c94a07;--line:#e8e6df;--ok:#2b8a3e;--warn:#e67700}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Sarabun","Noto Sans Thai",system-ui,sans-serif;background:var(--bg);color:var(--ink);padding-bottom:90px}
+  header{background:var(--brand);color:#fff;padding:14px 16px;position:sticky;top:0;z-index:10}
+  header h1{margin:0;font-size:20px}
+  header small{opacity:.9}
+  .wrap{max-width:720px;margin:0 auto;padding:12px 16px}
+  .chips{display:flex;gap:8px;overflow-x:auto;padding:10px 0;scrollbar-width:none}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:99px;padding:6px 14px;white-space:nowrap;cursor:pointer;font:inherit}
+  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .item{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;align-items:center}
+  .item img{width:72px;height:72px;object-fit:cover;border-radius:8px;background:#eee}
+  .item .info{flex:1;min-width:0}
+  .item .name{font-weight:600}
+  .item .desc{color:var(--muted);font-size:13px}
+  .item .price{color:var(--brand);font-weight:700;margin-top:2px}
+  button{font:inherit;cursor:pointer}
+  .btn{background:var(--brand);color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:600}
+  .btn:hover{background:var(--brand-d)}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .qty{display:flex;align-items:center;gap:8px}
+  .qty button{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:18px;line-height:1}
+  .qty span{min-width:20px;text-align:center;font-weight:600}
+  .cartbar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 16px;z-index:20}
+  .cartbar .inner{max-width:720px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .hidden{display:none!important}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
+  .panel h2{margin:0 0 10px;font-size:18px}
+  label{display:block;font-size:14px;margin:10px 0 4px;color:#444}
+  input,textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  .row{display:flex;justify-content:space-between;gap:10px;padding:4px 0}
+  .total{font-weight:700;font-size:18px;border-top:1px dashed var(--line);margin-top:6px;padding-top:8px}
+  .bank{background:#fff4e6;border:1px solid #ffd8a8;border-radius:10px;padding:14px;text-align:center}
+  .bank .acc{font-size:26px;font-weight:700;letter-spacing:1px;margin:6px 0}
+  .bank .amt{font-size:22px;color:var(--brand);font-weight:700}
+  .status{display:inline-block;padding:4px 12px;border-radius:99px;font-weight:600;font-size:14px}
+  .s-pending_payment{background:#fff3bf;color:#7a5b00}
+  .s-payment_submitted{background:#d0ebff;color:#0b5394}
+  .s-paid,.s-preparing{background:#d3f9d8;color:var(--ok)}
+  .s-done{background:var(--ok);color:#fff}
+  .s-cancelled{background:#ffe3e3;color:#c92a2a}
+  .err{color:#c92a2a;font-size:14px;margin-top:8px}
+  .muted{color:var(--muted);font-size:14px}
+  .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#222;color:#fff;padding:8px 16px;border-radius:99px;z-index:50;font-size:14px}
+  #preview{max-width:100%;max-height:260px;border-radius:8px;margin-top:8px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap" style="padding:0 16px">
+    <h1 id="shopName">สั่งอาหารออนไลน์</h1>
+    <small id="shopNotice"></small>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- หน้าเมนู -->
+  <section id="vMenu">
+    <div class="chips" id="chips"></div>
+    <div id="menuList"><p class="muted">กำลังโหลดเมนู…</p></div>
+  </section>
+
+  <!-- ตะกร้า / ยืนยันออเดอร์ -->
+  <section id="vCheckout" class="hidden">
+    <div class="panel">
+      <h2>ตะกร้าของคุณ</h2>
+      <div id="cartLines"></div>
+      <div class="row total"><span>รวมทั้งหมด</span><span id="cartTotal">0 บาท</span></div>
+    </div>
+    <div class="panel">
+      <h2>ข้อมูลผู้สั่ง</h2>
+      <label for="cName">ชื่อ</label>
+      <input id="cName" autocomplete="name" maxlength="100">
+      <label for="cPhone">เบอร์โทร</label>
+      <input id="cPhone" type="tel" autocomplete="tel" maxlength="30">
+      <label for="cNote">หมายเหตุ (ที่อยู่/โต๊ะ/เวลารับ ฯลฯ)</label>
+      <textarea id="cNote" rows="2" maxlength="300"></textarea>
+      <div class="err" id="coErr"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn ghost" id="coBack">← กลับไปเลือกเมนู</button>
+        <button class="btn" id="coSubmit" style="flex:1">ยืนยันสั่งอาหาร</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- หน้าออเดอร์: แจ้งโอน + ติดตามสถานะ -->
+  <section id="vOrder" class="hidden">
+    <div class="panel">
+      <div class="row"><h2 style="margin:0">ออเดอร์ #<span id="oNo"></span></h2><span class="status" id="oStatus"></span></div>
+      <div id="oItems" style="margin-top:8px"></div>
+      <div class="row total"><span>ยอดที่ต้องชำระ</span><span id="oTotal"></span></div>
+    </div>
+
+    <div id="payBox" class="panel hidden">
+      <h2>ชำระเงินโดยโอนเข้าบัญชี</h2>
+      <div class="bank">
+        <div id="bBank"></div>
+        <div class="acc" id="bAcc"></div>
+        <div id="bName"></div>
+        <div style="margin:8px 0">ยอดโอน <span class="amt" id="bAmt"></span></div>
+        <button class="btn ghost" id="copyAcc">คัดลอกเลขบัญชี</button>
+      </div>
+      <h2 style="margin-top:18px">แจ้งโอนเงิน</h2>
+      <label for="pAmt">จำนวนเงินที่โอน (บาท)</label>
+      <input id="pAmt" type="number" step="0.01" inputmode="decimal">
+      <label for="pTime">วันเวลาที่โอน</label>
+      <input id="pTime" type="datetime-local">
+      <label for="pSlip">แนบสลิป (รูปภาพ)</label>
+      <input id="pSlip" type="file" accept="image/*">
+      <img id="preview" class="hidden" alt="ตัวอย่างสลิป">
+      <div class="err" id="payErr"></div>
+      <button class="btn" id="paySubmit" style="width:100%;margin-top:14px">แจ้งโอนเงิน</button>
+    </div>
+
+    <div id="waitBox" class="panel hidden"><p id="waitMsg" style="margin:0"></p></div>
+
+    <button class="btn ghost" id="newOrder" style="width:100%">สั่งอาหารใหม่</button>
+  </section>
+
+</main>
+
+<div class="cartbar hidden" id="cartbar">
+  <div class="inner">
+    <div><strong id="cbCount">0</strong> รายการ · <strong id="cbTotal">0</strong> บาท</div>
+    <button class="btn" id="cbGo">ดูตะกร้า / สั่งเลย</button>
+  </div>
+</div>
+<div class="toast hidden" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+const baht = n => Number(n).toLocaleString("th-TH", {maximumFractionDigits: 2}) + " บาท";
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const STATUS = {
+  pending_payment:   "รอชำระเงิน",
+  payment_submitted: "แจ้งโอนแล้ว รอร้านตรวจสอบ",
+  paid:              "ชำระเงินแล้ว",
+  preparing:         "กำลังทำอาหาร",
+  done:              "เสร็จแล้ว",
+  cancelled:         "ยกเลิก",
+};
+const WAIT_MSG = {
+  payment_submitted: "ร้านได้รับการแจ้งโอนแล้ว กำลังตรวจสอบยอด กรุณารอสักครู่ (หน้านี้อัปเดตสถานะอัตโนมัติ)",
+  paid:              "ร้านยืนยันการชำระเงินแล้ว ขอบคุณครับ กำลังเตรียมออเดอร์",
+  preparing:         "ร้านกำลังทำอาหารให้คุณ",
+  done:              "อาหารของคุณเสร็จแล้ว ขอบคุณที่ใช้บริการครับ",
+  cancelled:         "ออเดอร์นี้ถูกยกเลิก หากมีข้อสงสัยกรุณาติดต่อร้าน",
+};
+
+let menu = [], settings = {}, cat = "ทั้งหมด", pollTimer = null, currentOrder = null;
+let cart = JSON.parse(localStorage.getItem("cart") || "{}");
+
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.remove("hidden"); setTimeout(()=>t.classList.add("hidden"),2000); }
+function show(view){ ["vMenu","vCheckout","vOrder"].forEach(v=>$(v).classList.toggle("hidden", v!==view)); updateCartbar(view); window.scrollTo(0,0); }
+function saveCart(){ localStorage.setItem("cart", JSON.stringify(cart)); }
+
+/* ---------- โหลดข้อมูล ---------- */
+async function init(){
+  const [s, m] = await Promise.all([
+    sb.from("settings").select("*"),
+    sb.from("menu_items").select("*").order("sort_order").order("created_at"),
+  ]);
+  if (s.error || m.error){ $("menuList").innerHTML = '<p class="err">โหลดข้อมูลไม่สำเร็จ ตรวจสอบ config.js และ schema.sql</p>'; return; }
+  settings = Object.fromEntries(s.data.map(r => [r.key, r.value]));
+  menu = m.data;
+  // ลบสินค้าในตะกร้าที่ไม่มีขายแล้ว
+  Object.keys(cart).forEach(id => { if (!menu.find(x => x.id === id)) delete cart[id]; });
+  saveCart();
+  $("shopName").textContent = settings.shop_name || "สั่งอาหารออนไลน์";
+  document.title = $("shopName").textContent;
+  $("shopNotice").textContent = settings.shop_notice || "";
+  renderChips(); renderMenu(); updateCartbar("vMenu");
+
+  const activeId = localStorage.getItem("activeOrder");
+  if (activeId) await openOrder(activeId);
+}
+
+function renderChips(){
+  const cats = ["ทั้งหมด", ...new Set(menu.map(x => x.category))];
+  $("chips").innerHTML = cats.map(c => `<button class="chip ${c===cat?"on":""}" data-c="${esc(c)}">${esc(c)}</button>`).join("");
+}
+$("chips").addEventListener("click", e => { const c = e.target.dataset.c; if (c){ cat = c; renderChips(); renderMenu(); } });
+
+function renderMenu(){
+  const list = menu.filter(x => cat === "ทั้งหมด" || x.category === cat);
+  if (!list.length){ $("menuList").innerHTML = '<p class="muted">ยังไม่มีเมนู</p>'; return; }
+  $("menuList").innerHTML = list.map(x => `
+    <div class="item">
+      ${x.image_url ? `<img src="${esc(x.image_url)}" alt="" loading="lazy">` : ""}
+      <div class="info">
+        <div class="name">${esc(x.name)}</div>
+        ${x.description ? `<div class="desc">${esc(x.description)}</div>` : ""}
+        <div class="price">${baht(x.price)}</div>
+      </div>
+      <div class="qty">
+        ${cart[x.id] ? `<button data-dec="${x.id}">−</button><span>${cart[x.id]}</span>` : ""}
+        <button data-inc="${x.id}">+</button>
+      </div>
+    </div>`).join("");
+}
+$("menuList").addEventListener("click", e => {
+  const inc = e.target.dataset.inc, dec = e.target.dataset.dec;
+  if (inc){ cart[inc] = Math.min((cart[inc] || 0) + 1, 50); }
+  if (dec){ cart[dec] = (cart[dec] || 0) - 1; if (cart[dec] <= 0) delete cart[dec]; }
+  if (inc || dec){ saveCart(); renderMenu(); updateCartbar("vMenu"); }
+});
+
+/* ---------- ตะกร้า ---------- */
+function cartInfo(){
+  let count = 0, total = 0;
+  for (const [id, q] of Object.entries(cart)){ const m = menu.find(x => x.id === id); if (m){ count += q; total += m.price * q; } }
+  return {count, total};
+}
+function updateCartbar(view){
+  const {count, total} = cartInfo();
+  $("cbCount").textContent = count; $("cbTotal").textContent = total.toLocaleString("th-TH");
+  $("cartbar").classList.toggle("hidden", !(view === "vMenu" && count > 0));
+}
+$("cbGo").onclick = () => { renderCheckout(); show("vCheckout"); };
+$("coBack").onclick = () => show("vMenu");
+
+function renderCheckout(){
+  const lines = Object.entries(cart).map(([id, q]) => ({m: menu.find(x => x.id === id), q})).filter(l => l.m);
+  $("cartLines").innerHTML = lines.map(({m, q}) => `
+    <div class="row"><span>${esc(m.name)} × ${q}</span><span>${baht(m.price * q)}</span></div>`).join("");
+  $("cartTotal").textContent = baht(cartInfo().total);
+  $("cName").value = localStorage.getItem("cName") || "";
+  $("cPhone").value = localStorage.getItem("cPhone") || "";
+}
+
+$("coSubmit").onclick = async () => {
+  const name = $("cName").value.trim(), phone = $("cPhone").value.trim();
+  $("coErr").textContent = "";
+  if (!name || !phone){ $("coErr").textContent = "กรุณากรอกชื่อและเบอร์โทร"; return; }
+  if (!/^[0-9+\-\s]{8,15}$/.test(phone)){ $("coErr").textContent = "รูปแบบเบอร์โทรไม่ถูกต้อง"; return; }
+  const items = Object.entries(cart).map(([id, qty]) => ({id, qty}));
+  if (!items.length){ $("coErr").textContent = "ตะกร้าว่างเปล่า"; return; }
+  $("coSubmit").disabled = true;
+  const {data, error} = await sb.rpc("create_order", {p_name: name, p_phone: phone, p_note: $("cNote").value, p_items: items});
+  $("coSubmit").disabled = false;
+  if (error){ $("coErr").textContent = error.message; return; }
+  localStorage.setItem("cName", name); localStorage.setItem("cPhone", phone);
+  localStorage.setItem("activeOrder", data.id);
+  cart = {}; saveCart(); $("cNote").value = "";
+  await openOrder(data.id);
+};
+
+/* ---------- หน้าออเดอร์ ---------- */
+async function openOrder(id){
+  const {data, error} = await sb.rpc("get_order", {p_order_id: id});
+  if (error || !data){ localStorage.removeItem("activeOrder"); show("vMenu"); return; }
+  currentOrder = data; renderOrder(); show("vOrder");
+  clearInterval(pollTimer);
+  pollTimer = setInterval(refreshOrder, 8000);
+}
+async function refreshOrder(){
+  if (!currentOrder) return;
+  const {data} = await sb.rpc("get_order", {p_order_id: currentOrder.id});
+  if (data && data.status !== currentOrder.status){ currentOrder = data; renderOrder(); toast("สถานะออเดอร์อัปเดต"); }
+}
+function renderOrder(){
+  const o = currentOrder;
+  $("oNo").textContent = o.order_no;
+  $("oStatus").textContent = STATUS[o.status] || o.status;
+  $("oStatus").className = "status s-" + o.status;
+  $("oItems").innerHTML = o.items.map(i => `<div class="row"><span>${esc(i.name)} × ${i.qty}</span><span>${baht(i.price * i.qty)}</span></div>`).join("");
+  $("oTotal").textContent = baht(o.total);
+
+  const canPay = o.status === "pending_payment";
+  $("payBox").classList.toggle("hidden", !canPay);
+  $("waitBox").classList.toggle("hidden", canPay);
+  if (canPay){
+    $("bBank").textContent = settings.bank_name || "";
+    $("bAcc").textContent = settings.account_no || "";
+    $("bName").textContent = "ชื่อบัญชี " + (settings.account_name || "");
+    $("bAmt").textContent = baht(o.total);
+    if (!$("pAmt").value) $("pAmt").value = o.total;
+    if (!$("pTime").value){ const d = new Date(Date.now() - new Date().getTimezoneOffset()*60000); $("pTime").value = d.toISOString().slice(0,16); }
+  } else {
+    $("waitMsg").textContent = WAIT_MSG[o.status] || "";
+  }
+}
+$("copyAcc").onclick = async () => {
+  try { await navigator.clipboard.writeText((settings.account_no || "").replace(/[^0-9]/g, "")); toast("คัดลอกเลขบัญชีแล้ว"); }
+  catch { toast("คัดลอกไม่สำเร็จ"); }
+};
+$("newOrder").onclick = () => {
+  clearInterval(pollTimer); currentOrder = null; localStorage.removeItem("activeOrder");
+  $("pAmt").value = ""; $("pTime").value = ""; $("pSlip").value = ""; $("preview").classList.add("hidden");
+  renderMenu(); show("vMenu");
+};
+
+/* ---------- แจ้งโอน + อัปโหลดสลิป ---------- */
+function compress(file, maxSide = 1400, quality = 0.82){
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width*k); c.height = Math.round(img.height*k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob(b => { URL.revokeObjectURL(url); b ? resolve(b) : reject(new Error("แปลงรูปไม่สำเร็จ")); }, "image/jpeg", quality);
+    };
+    img.onerror = () => reject(new Error("เปิดไฟล์รูปไม่ได้"));
+    img.src = url;
+  });
+}
+$("pSlip").onchange = () => {
+  const f = $("pSlip").files[0];
+  if (f){ $("preview").src = URL.createObjectURL(f); $("preview").classList.remove("hidden"); }
+};
+$("paySubmit").onclick = async () => {
+  $("payErr").textContent = "";
+  const amt = parseFloat($("pAmt").value), t = $("pTime").value, f = $("pSlip").files[0];
+  if (!(amt > 0)){ $("payErr").textContent = "กรุณากรอกจำนวนเงินที่โอน"; return; }
+  if (!t){ $("payErr").textContent = "กรุณาระบุวันเวลาที่โอน"; return; }
+  if (!f){ $("payErr").textContent = "กรุณาแนบสลิปการโอนเงิน"; return; }
+  $("paySubmit").disabled = true; $("paySubmit").textContent = "กำลังส่ง…";
+  try {
+    const blob = await compress(f);
+    const path = `${currentOrder.id}/${Date.now()}.jpg`;
+    const up = await sb.storage.from("slips").upload(path, blob, {contentType: "image/jpeg"});
+    if (up.error) throw up.error;
+    const {error} = await sb.rpc("submit_payment", {
+      p_order_id: currentOrder.id, p_amount: amt, p_time: new Date(t).toISOString(), p_slip_path: path,
+    });
+    if (error) throw error;
+    await refreshOrder(); toast("แจ้งโอนเรียบร้อย");
+  } catch (e) {
+    $("payErr").textContent = "ส่งไม่สำเร็จ: " + (e.message || e);
+  } finally {
+    $("paySubmit").disabled = false; $("paySubmit").textContent = "แจ้งโอนเงิน";
+  }
+};
+
+init();
+</script>
+</body>
+</html>
