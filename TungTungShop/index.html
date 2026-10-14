@@ -51,6 +51,9 @@
   .muted{color:var(--muted);font-size:14px}
   .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#222;color:#fff;padding:8px 16px;border-radius:99px;z-index:50;font-size:14px}
   #preview{max-width:100%;max-height:260px;border-radius:8px;margin-top:8px}
+  .queue{background:#e7f5ff;border:1px solid #a5d8ff;border-radius:10px;padding:12px;text-align:center;margin-bottom:12px;font-weight:600;color:#0b5394}
+  .queue .big{font-size:32px;line-height:1.1;display:block}
+  summary{outline:none}
 </style>
 </head>
 <body>
@@ -68,6 +71,15 @@
   <section id="vMenu">
     <div class="chips" id="chips"></div>
     <div id="menuList"><p class="muted">กำลังโหลดเมนู…</p></div>
+    <details class="panel" id="lookup">
+      <summary style="cursor:pointer;font-weight:600">เช็คสถานะ / คิวออเดอร์ที่สั่งไปแล้ว</summary>
+      <label for="lkNo">เลขออเดอร์ (ตัวเลขหลัง #)</label>
+      <input id="lkNo" type="number" inputmode="numeric" min="1">
+      <label for="lkPhone">เบอร์โทรที่ใช้สั่ง</label>
+      <input id="lkPhone" type="tel" autocomplete="tel">
+      <div class="err" id="lkErr"></div>
+      <button class="btn" id="lkGo" style="width:100%;margin-top:12px">ค้นหา</button>
+    </details>
   </section>
 
   <!-- ตะกร้า / ยืนยันออเดอร์ -->
@@ -122,9 +134,17 @@
       <button class="btn" id="paySubmit" style="width:100%;margin-top:14px">แจ้งโอนเงิน</button>
     </div>
 
-    <div id="waitBox" class="panel hidden"><p id="waitMsg" style="margin:0"></p></div>
+    <div id="waitBox" class="panel hidden">
+      <div id="queueBox" class="queue hidden"></div>
+      <p id="waitMsg" style="margin:0"></p>
+    </div>
 
-    <button class="btn ghost" id="newOrder" style="width:100%">สั่งอาหารใหม่</button>
+    <div class="panel">
+      <div class="muted">เปิดดูสถานะจากเครื่องอื่นได้ด้วยเลขออเดอร์ <strong id="oNo2"></strong> + เบอร์โทรที่ใช้สั่ง หรือแชร์ลิงก์ติดตามนี้</div>
+      <button class="btn ghost" id="copyLink" style="width:100%;margin-top:10px">คัดลอกลิงก์ติดตามออเดอร์</button>
+    </div>
+
+    <button class="btn ghost" id="newOrder" style="width:100%">สั่งอาหารใหม่ / ดูเมนู</button>
   </section>
 
 </main>
@@ -184,8 +204,11 @@ async function init(){
   $("shopNotice").textContent = settings.shop_notice || "";
   renderChips(); renderMenu(); updateCartbar("vMenu");
 
-  const activeId = localStorage.getItem("activeOrder");
-  if (activeId) await openOrder(activeId);
+  // ลิงก์ติดตาม ?order=<id> ใช้ก่อน ไม่งั้นใช้ออเดอร์ล่าสุดที่จำไว้ในเครื่อง
+  const fromUrl = new URLSearchParams(location.search).get("order");
+  const isId = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || "");
+  const activeId = isId(fromUrl) ? fromUrl : localStorage.getItem("activeOrder");
+  if (activeId){ await openOrder(activeId); if (currentOrder) localStorage.setItem("activeOrder", currentOrder.id); }
 }
 
 function renderChips(){
@@ -269,11 +292,15 @@ async function openOrder(id){
 async function refreshOrder(){
   if (!currentOrder) return;
   const {data} = await sb.rpc("get_order", {p_order_id: currentOrder.id});
-  if (data && data.status !== currentOrder.status){ currentOrder = data; renderOrder(); toast("สถานะออเดอร์อัปเดต"); }
+  if (data && (data.status !== currentOrder.status || data.queue_ahead !== currentOrder.queue_ahead)){
+    const statusChanged = data.status !== currentOrder.status;
+    currentOrder = data; renderOrder();
+    if (statusChanged) toast("สถานะออเดอร์อัปเดต");
+  }
 }
 function renderOrder(){
   const o = currentOrder;
-  $("oNo").textContent = o.order_no;
+  $("oNo").textContent = o.order_no; $("oNo2").textContent = "#" + o.order_no;
   $("oStatus").textContent = STATUS[o.status] || o.status;
   $("oStatus").className = "status s-" + o.status;
   $("oItems").innerHTML = o.items.map(i => `<div class="row"><span>${esc(i.name)} × ${i.qty}</span><span>${baht(i.price * i.qty)}</span></div>`).join("");
@@ -292,13 +319,43 @@ function renderOrder(){
   } else {
     $("waitMsg").textContent = WAIT_MSG[o.status] || "";
   }
+
+  // แสดงคิว: เฉพาะออเดอร์ที่ชำระแล้วและกำลังทำ
+  const q = $("queueBox"), ahead = o.queue_ahead;
+  if (ahead == null){ q.classList.add("hidden"); }
+  else {
+    q.classList.remove("hidden");
+    q.innerHTML = o.status === "preparing" && ahead === 0
+      ? "ถึงคิวของคุณแล้ว ร้านกำลังทำอาหาร"
+      : ahead === 0
+        ? "คิวถัดไปคือคุณ"
+        : `มี <span class="big">${ahead}</span> ออเดอร์ก่อนหน้าคุณ`;
+  }
 }
 $("copyAcc").onclick = async () => {
   try { await navigator.clipboard.writeText((settings.account_no || "").replace(/[^0-9]/g, "")); toast("คัดลอกเลขบัญชีแล้ว"); }
   catch { toast("คัดลอกไม่สำเร็จ"); }
 };
+$("copyLink").onclick = async () => {
+  const url = location.origin + location.pathname + "?order=" + currentOrder.id;
+  try { await navigator.clipboard.writeText(url); toast("คัดลอกลิงก์แล้ว"); }
+  catch { prompt("คัดลอกลิงก์นี้", url); }
+};
+$("lkGo").onclick = async () => {
+  const no = parseInt($("lkNo").value), phone = $("lkPhone").value.trim();
+  $("lkErr").textContent = "";
+  if (!(no > 0) || !phone){ $("lkErr").textContent = "กรุณากรอกเลขออเดอร์และเบอร์โทร"; return; }
+  $("lkGo").disabled = true;
+  const {data, error} = await sb.rpc("track_order", {p_order_no: no, p_phone: phone});
+  $("lkGo").disabled = false;
+  if (error){ $("lkErr").textContent = "ค้นหาไม่สำเร็จ: " + error.message; return; }
+  if (!data){ $("lkErr").textContent = "ไม่พบออเดอร์ ตรวจสอบเลขออเดอร์และเบอร์โทรอีกครั้ง"; return; }
+  localStorage.setItem("activeOrder", data.id);
+  await openOrder(data.id);
+};
 $("newOrder").onclick = () => {
   clearInterval(pollTimer); currentOrder = null; localStorage.removeItem("activeOrder");
+  history.replaceState(null, "", location.pathname);
   $("pAmt").value = ""; $("pTime").value = ""; $("pSlip").value = ""; $("preview").classList.add("hidden");
   renderMenu(); show("vMenu");
 };
