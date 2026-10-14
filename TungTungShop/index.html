@@ -73,12 +73,13 @@
     <div id="menuList"><p class="muted">กำลังโหลดเมนู…</p></div>
     <details class="panel" id="lookup">
       <summary style="cursor:pointer;font-weight:600">เช็คสถานะ / คิวออเดอร์ที่สั่งไปแล้ว</summary>
-      <label for="lkNo">เลขออเดอร์ (ตัวเลขหลัง #)</label>
-      <input id="lkNo" type="number" inputmode="numeric" min="1">
+      <label for="lkName">ชื่อที่ใช้สั่ง</label>
+      <input id="lkName" autocomplete="name">
       <label for="lkPhone">เบอร์โทรที่ใช้สั่ง</label>
       <input id="lkPhone" type="tel" autocomplete="tel">
       <div class="err" id="lkErr"></div>
       <button class="btn" id="lkGo" style="width:100%;margin-top:12px">ค้นหา</button>
+      <div id="lkList"></div>
     </details>
   </section>
 
@@ -140,7 +141,7 @@
     </div>
 
     <div class="panel">
-      <div class="muted">เปิดดูสถานะจากเครื่องอื่นได้ด้วยเลขออเดอร์ <strong id="oNo2"></strong> + เบอร์โทรที่ใช้สั่ง หรือแชร์ลิงก์ติดตามนี้</div>
+      <div class="muted">เปิดดูสถานะจากเครื่องอื่นได้ด้วยชื่อและเบอร์โทรที่ใช้สั่ง หรือแชร์ลิงก์ติดตามนี้</div>
       <button class="btn ghost" id="copyLink" style="width:100%;margin-top:10px">คัดลอกลิงก์ติดตามออเดอร์</button>
     </div>
 
@@ -300,7 +301,7 @@ async function refreshOrder(){
 }
 function renderOrder(){
   const o = currentOrder;
-  $("oNo").textContent = o.order_no; $("oNo2").textContent = "#" + o.order_no;
+  $("oNo").textContent = o.order_no;
   $("oStatus").textContent = STATUS[o.status] || o.status;
   $("oStatus").className = "status s-" + o.status;
   $("oItems").innerHTML = o.items.map(i => `<div class="row"><span>${esc(i.name)} × ${i.qty}</span><span>${baht(i.price * i.qty)}</span></div>`).join("");
@@ -342,17 +343,25 @@ $("copyLink").onclick = async () => {
   catch { prompt("คัดลอกลิงก์นี้", url); }
 };
 $("lkGo").onclick = async () => {
-  const no = parseInt($("lkNo").value), phone = $("lkPhone").value.trim();
-  $("lkErr").textContent = "";
-  if (!(no > 0) || !phone){ $("lkErr").textContent = "กรุณากรอกเลขออเดอร์และเบอร์โทร"; return; }
+  const name = $("lkName").value.trim(), phone = $("lkPhone").value.trim();
+  $("lkErr").textContent = ""; $("lkList").innerHTML = "";
+  if (!name || !phone){ $("lkErr").textContent = "กรุณากรอกชื่อและเบอร์โทร"; return; }
   $("lkGo").disabled = true;
-  const {data, error} = await sb.rpc("track_order", {p_order_no: no, p_phone: phone});
+  const {data, error} = await sb.rpc("track_orders", {p_name: name, p_phone: phone});
   $("lkGo").disabled = false;
   if (error){ $("lkErr").textContent = "ค้นหาไม่สำเร็จ: " + error.message; return; }
-  if (!data){ $("lkErr").textContent = "ไม่พบออเดอร์ ตรวจสอบเลขออเดอร์และเบอร์โทรอีกครั้ง"; return; }
-  localStorage.setItem("activeOrder", data.id);
-  await openOrder(data.id);
+  if (!data || !data.length){ $("lkErr").textContent = "ไม่พบออเดอร์ ตรวจสอบชื่อและเบอร์โทรอีกครั้ง (ต้องตรงกับที่ใช้ตอนสั่ง)"; return; }
+  if (data.length === 1){ pickOrder(data[0].id); return; }
+  $("lkList").innerHTML = '<div class="muted" style="margin-top:12px">พบ ' + data.length + ' ออเดอร์ เลือกที่ต้องการดู</div>' +
+    data.map(o => `<button class="btn ghost" style="width:100%;margin-top:8px;text-align:left" data-pick="${esc(o.id)}">
+      #${o.order_no} · ${new Date(o.created_at).toLocaleString("th-TH", {dateStyle:"short", timeStyle:"short"})} · ${baht(o.total)} · ${esc(STATUS[o.status] || o.status)}</button>`).join("");
 };
+$("lkList").onclick = e => { const id = e.target.closest("[data-pick]")?.dataset.pick; if (id) pickOrder(id); };
+async function pickOrder(id){
+  localStorage.setItem("activeOrder", id);
+  $("lkList").innerHTML = "";
+  await openOrder(id);
+}
 $("newOrder").onclick = () => {
   clearInterval(pollTimer); currentOrder = null; localStorage.removeItem("activeOrder");
   history.replaceState(null, "", location.pathname);
