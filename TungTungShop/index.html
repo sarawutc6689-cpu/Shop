@@ -623,8 +623,8 @@ function renderQueueBoard(){
     ${items.length ? `<ol>${items.map((i, k) => `<li class="${i.status === "preparing" ? "cooking" : ""} ${i.order_no === mine ? "me" : ""}">
         <span class="k">คิวที่ ${k + 1}</span><span class="n">#${i.order_no}</span><span class="st">${i.status === "preparing" ? "กำลังทำ" : "รอคิว"}</span></li>`).join("")}</ol>
       ${queueData.total > items.length ? `<div class="muted" style="margin-top:6px">และอีก ${queueData.total - items.length} ออเดอร์</div>` : ""}`
-      : '<div class="muted" style="text-align:center">ออเดอร์ที่ชำระเงินแล้วจะแสดงที่นี่</div>'}
-    <div class="muted" style="margin-top:8px;font-size:12px">แสดงเฉพาะออเดอร์ที่ชำระเงินแล้ว</div></div>`;
+      : '<div class="muted" style="text-align:center">แสดงออเดอร์ที่ชำระเงินแล้ว</div>'}
+    <div class="muted" style="margin-top:8px;font-size:12px"></div></div>`;
   $("qLeft").innerHTML = board;
   const box = $("side"), old = box.querySelector(".qboard"); if (old) old.remove();   // จอแคบกว่า 1280px: แสดงกระดานคิวไว้บนสุดของแผงขวา
   box.insertAdjacentHTML("afterbegin", board);
