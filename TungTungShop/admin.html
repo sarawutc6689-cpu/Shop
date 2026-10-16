@@ -46,6 +46,35 @@
   .dot.live{background:#2b8a3e}
   .thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;background:#eee}
   .mismatch{color:#c92a2a;font-weight:700}
+  .og{border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;background:#fafaf7}
+  .og .ch{display:flex;gap:6px;margin-top:6px;align-items:center}
+  .og .ch input[type=number]{width:90px}
+  .og .gh{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center}
+  .og .gh input[type=number]{width:70px}
+  .og label{margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap}
+  .og input[type=checkbox]{width:auto}
+  .opt{font-size:13px;color:var(--muted)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px}
+  .stat b{display:block;font-size:22px;margin-top:2px}
+  table.rt{width:100%;border-collapse:collapse;font-size:14px}
+  table.rt th,table.rt td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right}
+  table.rt th:first-child,table.rt td:first-child{text-align:left}
+  .hbar{display:flex;align-items:flex-end;gap:2px;height:110px;margin-top:8px}
+  .hbar div{flex:1;background:var(--brand);border-radius:3px 3px 0 0;min-height:1px;opacity:.85}
+  .hlab{display:flex;gap:2px;font-size:10px;color:var(--muted)}
+  .hlab span{flex:1;text-align:center}
+  #printArea{display:none}
+  @media print{
+    @page{margin:0}
+    body>*:not(#printArea){display:none!important}
+    #printArea{display:block!important;width:72mm;margin:0 auto;padding:3mm;color:#000;background:#fff;font-size:13px;line-height:1.35}
+    #printArea .big{font-size:26px;font-weight:700}
+    #printArea .c{text-align:center}
+    #printArea hr{border:0;border-top:1px dashed #000;margin:6px 0}
+    #printArea .r{display:flex;justify-content:space-between;gap:8px}
+    #printArea .o{padding-left:10px;font-size:12px}
+  }
 </style>
 </head>
 <body>
@@ -63,6 +92,7 @@
     <div class="wrap">
       <button class="tab on" data-t="tOrders">ออเดอร์ <span class="badge hidden" id="newBadge">0</span></button>
       <button class="tab" data-t="tMenu">เมนู</button>
+      <button class="tab" data-t="tReport">รายงาน</button>
       <button class="tab" data-t="tSettings">ตั้งค่าร้าน</button>
       <span class="grow"></span>
       <span class="muted"><span class="dot" id="liveDot"></span><span id="liveTxt">เชื่อมต่อ…</span></span>
@@ -73,7 +103,8 @@
   <main class="wrap">
     <!-- ออเดอร์ -->
     <section id="tOrders">
-      <div class="filters" id="filters"></div>
+      <div class="row"><div class="filters" id="filters"></div>
+        <label style="margin:0" title="พิมพ์ใบออเดอร์ให้เองทุกครั้งที่ออเดอร์เปลี่ยนเป็น ชำระแล้ว (หน้านี้ต้องเปิดค้างไว้)"><input type="checkbox" id="autoPrint" style="width:auto"> พิมพ์ใบออเดอร์อัตโนมัติเมื่อชำระแล้ว</label></div>
       <div id="orderList"></div>
     </section>
 
@@ -90,11 +121,35 @@
         </div>
         <label for="mDesc">คำอธิบาย</label><input id="mDesc">
         <label for="mImg">ลิงก์รูปภาพ (ไม่บังคับ)</label><input id="mImg" placeholder="https://...">
+        <label for="optEditor">ตัวเลือกเสริม (เช่น ระดับความเผ็ด, เพิ่มไข่ดาว +10) — ไม่บังคับ</label>
+        <div id="optEditor"></div>
+        <button class="btn sm ghost" id="addGroup" type="button">+ เพิ่มกลุ่มตัวเลือก</button>
         <label><input type="checkbox" id="mAvail" checked style="width:auto"> เปิดขาย</label>
         <div class="err" id="mErr"></div>
         <div class="acts"><button class="btn" id="mSave">บันทึก</button><button class="btn ghost" id="mCancel">ยกเลิก</button></div>
       </div>
       <div id="menuAdminList"></div>
+    </section>
+
+    <!-- รายงานยอดขาย -->
+    <section id="tReport" class="hidden">
+      <h2 style="margin:8px 0">รายงานยอดขาย</h2>
+      <div class="card">
+        <div class="filters" id="rPresets">
+          <button class="btn sm ghost" data-p="today">วันนี้</button>
+          <button class="btn sm ghost" data-p="yesterday">เมื่อวาน</button>
+          <button class="btn sm ghost" data-p="7">7 วันล่าสุด</button>
+          <button class="btn sm ghost" data-p="month">เดือนนี้</button>
+        </div>
+        <div class="grid2">
+          <div><label for="rFrom">ตั้งแต่วันที่</label><input id="rFrom" type="date"></div>
+          <div><label for="rTo">ถึงวันที่</label><input id="rTo" type="date"></div>
+        </div>
+        <div class="acts"><button class="btn" id="rGo">ดูรายงาน</button><button class="btn ghost hidden" id="rCsv">ดาวน์โหลด CSV</button></div>
+        <div class="muted" style="margin-top:6px">นับเป็นยอดขายเฉพาะออเดอร์ที่ชำระแล้ว / กำลังทำ / เสร็จแล้ว ตามวันที่สั่ง (เวลาประเทศไทย)</div>
+        <div class="err" id="rErr"></div>
+      </div>
+      <div id="rOut"></div>
     </section>
 
     <!-- ตั้งค่า -->
@@ -118,6 +173,7 @@
 </div>
 
 <div id="modal" class="modal hidden"></div>
+<div id="printArea"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
@@ -170,7 +226,7 @@ document.addEventListener("click", () => { if (audioCtx && audioCtx.state === "s
 
 document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
   document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === b));
-  ["tOrders","tMenu","tSettings"].forEach(id => $(id).classList.toggle("hidden", id !== b.dataset.t));
+  ["tOrders","tMenu","tReport","tSettings"].forEach(id => $(id).classList.toggle("hidden", id !== b.dataset.t));
   if (b.dataset.t === "tOrders") setBadge(0);
 });
 
@@ -187,6 +243,49 @@ function renderFilters(){
 }
 $("filters").onclick = e => { if (e.target.dataset.f){ filter = e.target.dataset.f; renderFilters(); renderOrders(); } };
 
+const itemsOf = o => [...(o.order_items || [])].sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
+const optText = i => (Array.isArray(i.options) ? i.options : []).map(c => c.name + (Number(c.price) ? ` (+${c.price})` : "")).join(", ");
+
+/* ---------- พิมพ์ใบออเดอร์ (เครื่องพิมพ์ความร้อน 80mm / A4 ก็ได้) ---------- */
+function ticketHtml(o){
+  const paid = ["paid", "preparing", "done"].includes(o.status);
+  return `
+    <div class="c">${esc($("sShop").value || "ใบออเดอร์")}</div>
+    <div class="c big">#${o.order_no}</div>
+    <div class="c">${fmtT(o.created_at)}</div>
+    <hr>
+    <div><b>${esc(o.customer_name)}</b> · ${esc(o.phone)}</div>
+    ${o.note ? `<div>หมายเหตุ: <b>${esc(o.note)}</b></div>` : ""}
+    <hr>
+    ${itemsOf(o).map(i => `<div class="r"><b>${i.qty} × ${esc(i.name)}</b><span>${baht(i.price * i.qty)}</span></div>` +
+      (Array.isArray(i.options) ? i.options.map(c => `<div class="o">+ ${esc(c.name)}</div>`).join("") : "")).join("")}
+    <hr>
+    <div class="r"><b>รวม</b><b>${baht(o.total)}</b></div>
+    <div class="c" style="margin-top:6px">${paid ? "ชำระเงินแล้ว" : "ยังไม่ชำระ (" + esc(STATUS[o.status] || o.status) + ")"}</div>`;
+}
+let printChain = Promise.resolve();
+function printOrder(o){   // เรียงคิวพิมพ์ทีละใบ กันออเดอร์เข้าพร้อมกันแล้วทับกัน
+  printChain = printChain.then(async () => {
+    $("printArea").innerHTML = ticketHtml(o);
+    await new Promise(r => setTimeout(r, 50));
+    window.print();
+    await new Promise(r => setTimeout(r, 400));
+  }).catch(e => console.warn("print failed", e));
+  return printChain;
+}
+const printedSet = () => { try { return new Set(JSON.parse(localStorage.getItem("printed") || "[]")); } catch { return new Set(); } };
+function markPrinted(id){ const a = [...printedSet(), id].slice(-300); try { localStorage.setItem("printed", JSON.stringify(a)); } catch {} }
+$("autoPrint").checked = (() => { try { return localStorage.getItem("autoPrint") === "1"; } catch { return false; } })();
+$("autoPrint").onchange = e => { try { localStorage.setItem("autoPrint", e.target.checked ? "1" : "0"); } catch {} };
+let pendingAuto = new Set();
+function flushAutoPrint(){
+  for (const id of [...pendingAuto]){
+    pendingAuto.delete(id);
+    const o = orders.find(x => x.id === id);
+    if (o && o.status !== "cancelled" && !printedSet().has(id)){ markPrinted(id); printOrder(o); }
+  }
+}
+
 function renderOrders(){
   const list = orders.filter(o => filter === "all" ? true : filter === "active" ? !["done","cancelled"].includes(o.status) : o.status === filter);
   if (!list.length){ $("orderList").innerHTML = '<p class="muted">ไม่มีออเดอร์</p>'; return; }
@@ -200,6 +299,7 @@ function renderOrders(){
     if (o.status === "pending_payment") acts.push(`<button class="btn sm ok" data-set="${o.id}:paid">รับเงินแล้ว (ยืนยันเอง)</button>`);
     if (o.status === "paid") acts.push(`<button class="btn sm ok" data-set="${o.id}:preparing">เริ่มทำอาหาร</button>`);
     if (o.status === "preparing") acts.push(`<button class="btn sm ok" data-set="${o.id}:done">ทำเสร็จแล้ว</button>`);
+    if (o.status !== "cancelled") acts.push(`<button class="btn sm ghost" data-print="${o.id}">🖨️ พิมพ์ใบออเดอร์</button>`);
     if (o.slip_path && o.status !== "payment_submitted") acts.push(`<button class="btn sm ghost" data-slip="${esc(o.slip_path)}">ดูสลิป</button>`);
     if (!["done","cancelled"].includes(o.status)) acts.push(`<button class="btn sm red" data-set="${o.id}:cancelled">ยกเลิก</button>`);
     return `
@@ -209,7 +309,7 @@ function renderOrders(){
         <span class="status s-${o.status}">${STATUS[o.status]}</span>
       </div>
       <div class="muted">สั่งเมื่อ ${fmtT(o.created_at)}</div>
-      <div style="margin-top:8px">${o.order_items.map(i => `<div class="row"><span>${esc(i.name)} × ${i.qty}</span><span>${baht(i.price*i.qty)}</span></div>`).join("")}</div>
+      <div style="margin-top:8px">${itemsOf(o).map(i => `<div class="row"><span>${esc(i.name)} × ${i.qty}${optText(i) ? `<div class="opt">${esc(optText(i))}</div>` : ""}</span><span>${baht(i.price*i.qty)}</span></div>`).join("")}</div>
       <div class="row" style="font-weight:700;border-top:1px dashed var(--line);margin-top:6px;padding-top:6px"><span>รวม</span><span>${baht(o.total)}</span></div>
       ${o.note ? `<div class="muted">หมายเหตุ: ${esc(o.note)}</div>` : ""}
       ${o.transfer_amount != null ? `<div class="muted" style="margin-top:6px">แจ้งโอน: <span class="${mismatch?"mismatch":""}">${baht(o.transfer_amount)}${mismatch?" (ไม่ตรงยอด!)":""}</span> · เวลาโอน ${fmtT(o.transfer_time)}</div>` : ""}
@@ -222,7 +322,8 @@ function renderOrders(){
 }
 
 $("orderList").onclick = async e => {
-  const set = e.target.dataset.set, slip = e.target.dataset.slip;
+  const set = e.target.dataset.set, slip = e.target.dataset.slip, pr = e.target.dataset.print;
+  if (pr){ const o = orders.find(x => x.id === pr); if (o){ markPrinted(o.id); printOrder(o); } return; }
   if (set){
     const [id, status] = set.split(":");
     if (status === "cancelled" && !confirm("ยืนยันยกเลิกออเดอร์นี้?")) return;
@@ -249,7 +350,8 @@ function subscribe(){
       const prev = orders.find(x => x.id === row.id);
       if (ev === "UPDATE" && row.status === "payment_submitted" && (!prev || prev.status !== "payment_submitted")){ beep(); setBadge(newCount + 1); }
       // order_items ถูกเพิ่มหลัง INSERT orders เล็กน้อย จึงหน่วงนิดก่อนโหลด
-      setTimeout(loadOrders, ev === "INSERT" ? 800 : 0);
+      if (ev === "UPDATE" && row.status === "paid" && (!prev || prev.status !== "paid") && $("autoPrint").checked) pendingAuto.add(row.id);
+      setTimeout(async () => { await loadOrders(); flushAutoPrint(); }, ev === "INSERT" ? 800 : 0);
     })
     .subscribe(status => {
       const live = status === "SUBSCRIBED";
@@ -257,6 +359,114 @@ function subscribe(){
       $("liveTxt").textContent = live ? "ออนไลน์ (realtime)" : "กำลังเชื่อมต่อ…";
     });
 }
+
+/* ---------- รายงานยอดขาย ---------- */
+const TZ_MS = 7 * 3600 * 1000;                                   // เวลาไทย UTC+7 (ไม่มี DST)
+const bkkShift = t => new Date(new Date(t).getTime() + TZ_MS);   // อ่านค่าด้วย getUTC* จะได้เวลาไทย
+const bkkDate = t => bkkShift(t).toISOString().slice(0, 10);
+const todayBkk = () => bkkDate(Date.now());
+const addDays = (d, n) => new Date(Date.parse(d + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+const REVENUE = ["paid", "preparing", "done"];
+
+// ฟังก์ชันล้วน: รับรายการออเดอร์ (มี order_items) คืนสรุปยอด
+function buildReport(list, from, to){
+  const days = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) days.push({date: d, orders: 0, revenue: 0});
+  const byDate = new Map(days.map(x => [x.date, x]));
+  const hours = Array.from({length: 24}, (_, h) => ({hour: h, orders: 0, revenue: 0}));
+  const items = new Map();
+  let orders = 0, revenue = 0, qty = 0, cancelled = 0, unpaid = 0;
+  for (const o of list){
+    if (o.status === "cancelled"){ cancelled++; continue; }
+    if (!REVENUE.includes(o.status)){ unpaid++; continue; }
+    const total = Number(o.total) || 0, d = byDate.get(bkkDate(o.created_at));
+    orders++; revenue += total;
+    if (d){ d.orders++; d.revenue += total; }
+    const h = hours[bkkShift(o.created_at).getUTCHours()]; h.orders++; h.revenue += total;
+    for (const i of o.order_items || []){
+      const q = Number(i.qty) || 0, r = (Number(i.price) || 0) * q;
+      qty += q;
+      const t = items.get(i.name) || {name: i.name, qty: 0, revenue: 0}; t.qty += q; t.revenue += r; items.set(i.name, t);
+    }
+  }
+  const top = [...items.values()].sort((a, b) => b.qty - a.qty || b.revenue - a.revenue || a.name.localeCompare(b.name));
+  return {from, to, orders, revenue, avg: orders ? revenue / orders : 0, qty, cancelled, unpaid, days, hours, top};
+}
+const csvCell = v => {
+  let t = String(v ?? "");
+  if (/^[=+\-@\t\r]/.test(t)) t = "'" + t;                      // กันสูตรใน Excel
+  return /[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+};
+function reportCsv(r){
+  const rows = [["รายงานยอดขาย", r.from, r.to], [], ["วันที่", "จำนวนออเดอร์", "ยอดขาย (บาท)"],
+    ...r.days.map(d => [d.date, d.orders, d.revenue.toFixed(2)]),
+    ["รวม", r.orders, r.revenue.toFixed(2)], [], ["เมนู", "จำนวนที่ขาย", "ยอดขาย (บาท)"],
+    ...r.top.map(t => [t.name, t.qty, t.revenue.toFixed(2)])];
+  return "\ufeff" + rows.map(x => x.map(csvCell).join(",")).join("\r\n");
+}
+function setRange(f, t){ $("rFrom").value = f; $("rTo").value = t; }
+$("rPresets").onclick = e => {
+  const p = e.target.dataset.p; if (!p) return;
+  const t = todayBkk();
+  if (p === "today") setRange(t, t);
+  if (p === "yesterday") setRange(addDays(t, -1), addDays(t, -1));
+  if (p === "7") setRange(addDays(t, -6), t);
+  if (p === "month") setRange(t.slice(0, 8) + "01", t);
+  $("rGo").click();
+};
+let lastReport = null;
+async function fetchRange(from, to){
+  const start = new Date(from + "T00:00:00+07:00").toISOString(), end = new Date(addDays(to, 1) + "T00:00:00+07:00").toISOString();
+  const all = [];
+  for (let page = 0; page < 100; page++){   // แบ่งหน้าละ 1000 (เพดานของ Supabase)
+    const {data, error} = await sb.from("orders").select("id, order_no, status, total, created_at, order_items(name, qty, price)")
+      .gte("created_at", start).lt("created_at", end).order("created_at").order("id").range(page * 1000, page * 1000 + 999);
+    if (error) throw error;
+    all.push(...data);
+    if (data.length < 1000) break;
+  }
+  return all;
+}
+$("rGo").onclick = async () => {
+  const from = $("rFrom").value, to = $("rTo").value; $("rErr").textContent = "";
+  if (!from || !to){ $("rErr").textContent = "กรุณาเลือกช่วงวันที่"; return; }
+  if (from > to){ $("rErr").textContent = "วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด"; return; }
+  if (Date.parse(to) - Date.parse(from) > 366 * 86400000){ $("rErr").textContent = "เลือกช่วงได้ไม่เกิน 1 ปี"; return; }
+  $("rGo").disabled = true; $("rOut").innerHTML = '<p class="muted">กำลังโหลด…</p>';
+  try { lastReport = buildReport(await fetchRange(from, to), from, to); renderReport(lastReport); }
+  catch (e){ $("rOut").innerHTML = ""; $("rErr").textContent = "โหลดรายงานไม่สำเร็จ: " + (e.message || e); }
+  $("rGo").disabled = false;
+};
+function renderReport(r){
+  $("rCsv").classList.remove("hidden");
+  const max = Math.max(...r.hours.map(h => h.revenue), 1), money = n => Number(n).toLocaleString("th-TH", {maximumFractionDigits: 2});
+  $("rOut").innerHTML = `
+    <div class="cards">
+      <div class="stat">ยอดขายรวม<b>${baht(r.revenue)}</b></div>
+      <div class="stat">จำนวนออเดอร์<b>${r.orders}</b></div>
+      <div class="stat">เฉลี่ยต่อออเดอร์<b>${baht(r.avg)}</b></div>
+      <div class="stat">จำนวนจานที่ขาย<b>${r.qty}</b></div>
+      <div class="stat">ยกเลิก<b>${r.cancelled}</b></div>
+      <div class="stat">ยังไม่ชำระ / รอตรวจ<b>${r.unpaid}</b></div>
+    </div>
+    <div class="card"><b>ยอดขายตามชั่วโมง</b>
+      <div class="hbar">${r.hours.map(h => `<div title="${h.hour}:00 · ${h.orders} ออเดอร์ · ${money(h.revenue)} บาท" style="height:${Math.round(h.revenue / max * 100)}%"></div>`).join("")}</div>
+      <div class="hlab">${r.hours.map(h => `<span>${h.hour % 3 === 0 ? h.hour : ""}</span>`).join("")}</div></div>
+    <div class="card"><b>เมนูขายดี</b>
+      <table class="rt"><tr><th>เมนู</th><th>จำนวน</th><th>ยอดขาย</th></tr>
+      ${r.top.map(t => `<tr><td>${esc(t.name)}</td><td>${t.qty}</td><td>${money(t.revenue)}</td></tr>`).join("") || '<tr><td colspan="3" class="muted">ไม่มีข้อมูล</td></tr>'}</table></div>
+    <div class="card"><b>รายวัน</b>
+      <table class="rt"><tr><th>วันที่</th><th>ออเดอร์</th><th>ยอดขาย</th></tr>
+      ${r.days.map(d => `<tr><td>${d.date}</td><td>${d.orders}</td><td>${money(d.revenue)}</td></tr>`).join("")}
+      <tr><th>รวม</th><th>${r.orders}</th><th>${money(r.revenue)}</th></tr></table></div>`;
+}
+$("rCsv").onclick = () => {
+  if (!lastReport) return;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([reportCsv(lastReport)], {type: "text/csv;charset=utf-8"}));
+  a.download = `sales-${lastReport.from}_${lastReport.to}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+(() => { const t = todayBkk(); setRange(t, t); })();
 
 /* ---------- เมนู ---------- */
 async function loadMenu(){
@@ -269,7 +479,7 @@ async function loadMenu(){
       <div style="display:flex;gap:10px;align-items:center">
         ${m.image_url ? `<img class="thumb" src="${esc(m.image_url)}" alt="">` : ""}
         <div><strong>${esc(m.name)}</strong> ${m.is_available ? "" : '<span class="status s-cancelled">ปิดขาย</span>'}<br>
-        <span class="muted">${esc(m.category)} · ${baht(m.price)}</span></div>
+        <span class="muted">${esc(m.category)} · ${baht(m.price)}${(m.option_groups || []).length ? ` · ตัวเลือก ${m.option_groups.length} กลุ่ม` : ""}</span></div>
       </div>
       <div class="acts" style="margin:0">
         <button class="btn sm ghost" data-toggle="${m.id}">${m.is_available ? "ปิดขาย" : "เปิดขาย"}</button>
@@ -283,15 +493,71 @@ function openForm(m){
   $("mId").value = m?.id || ""; $("mName").value = m?.name || ""; $("mPrice").value = m?.price ?? "";
   $("mCat").value = m?.category || "อาหารจานเดียว"; $("mSort").value = m?.sort_order ?? 0;
   $("mDesc").value = m?.description || ""; $("mImg").value = m?.image_url || ""; $("mAvail").checked = m ? m.is_available : true;
+  optGroups = JSON.parse(JSON.stringify(Array.isArray(m?.option_groups) ? m.option_groups : [])); renderOpts();
   $("mName").focus();
+}
+
+/* ---------- ตัวแก้ไขตัวเลือกเสริม ---------- */
+let optGroups = [];
+const rid = p => p + Math.random().toString(36).slice(2, 8);   // รหัสตัวเลือกต้องไม่ซ้ำกันภายในเมนูเดียว
+function renderOpts(){
+  $("optEditor").innerHTML = optGroups.map((g, gi) => `
+    <div class="og">
+      <div class="gh">
+        <input data-f="gname" data-g="${gi}" value="${esc(g.name)}" placeholder="ชื่อกลุ่ม เช่น ระดับความเผ็ด" aria-label="ชื่อกลุ่ม">
+        <label><input type="checkbox" data-f="req" data-g="${gi}" ${g.required ? "checked" : ""}> บังคับเลือก</label>
+        <label>เลือกได้ <input type="number" min="1" max="20" data-f="max" data-g="${gi}" value="${g.max}"></label>
+        <button class="btn sm red" type="button" data-delg="${gi}">ลบกลุ่ม</button>
+      </div>
+      ${g.choices.map((c, ci) => `
+        <div class="ch">
+          <input data-f="cname" data-g="${gi}" data-c="${ci}" value="${esc(c.name)}" placeholder="ชื่อตัวเลือก เช่น ไข่ดาว" aria-label="ชื่อตัวเลือก">
+          <input type="number" min="0" step="0.5" data-f="cprice" data-g="${gi}" data-c="${ci}" value="${c.price}" aria-label="ราคาเพิ่ม">
+          <span class="muted">บาท</span>
+          <button class="btn sm ghost" type="button" data-delc="${gi}.${ci}" aria-label="ลบตัวเลือก">×</button>
+        </div>`).join("")}
+      <button class="btn sm ghost" type="button" data-addc="${gi}" style="margin-top:8px">+ เพิ่มตัวเลือก</button>
+    </div>`).join("");
+}
+$("addGroup").onclick = () => { optGroups.push({id: rid("g"), name: "", required: false, max: 1, choices: [{id: rid("c"), name: "", price: 0}]}); renderOpts(); };
+$("optEditor").addEventListener("input", e => {
+  const d = e.target.dataset, g = optGroups[d.g]; if (!g) return;
+  if (d.f === "gname") g.name = e.target.value;
+  if (d.f === "max") g.max = parseInt(e.target.value) || 1;
+  if (d.f === "cname") g.choices[d.c].name = e.target.value;
+  if (d.f === "cprice") g.choices[d.c].price = parseFloat(e.target.value) || 0;
+});
+$("optEditor").addEventListener("change", e => { const d = e.target.dataset; if (d.f === "req") optGroups[d.g].required = e.target.checked; });
+$("optEditor").addEventListener("click", e => {
+  const d = e.target.dataset;
+  if (d.delg !== undefined) optGroups.splice(Number(d.delg), 1);
+  else if (d.addc !== undefined) optGroups[d.addc].choices.push({id: rid("c"), name: "", price: 0});
+  else if (d.delc !== undefined){ const [gi, ci] = d.delc.split(".").map(Number); optGroups[gi].choices.splice(ci, 1); }
+  else return;
+  renderOpts();
+});
+// ล้างค่าว่างและค่าผิดปกติก่อนบันทึก; คืน {error} ถ้าตัวเลือกไม่ครบ
+function cleanOpts(){
+  const out = [];
+  for (const g of optGroups){
+    const name = g.name.trim(), choices = g.choices.map(c => ({id: c.id, name: c.name.trim(), price: Math.max(Number(c.price) || 0, 0)})).filter(c => c.name);
+    if (!name && !choices.length) continue;                 // กลุ่มว่าง ข้าม
+    if (!name) return {error: "กรุณาตั้งชื่อกลุ่มตัวเลือกทุกกลุ่ม"};
+    if (!choices.length) return {error: `กลุ่ม "${name}" ยังไม่มีตัวเลือก`};
+    out.push({id: g.id, name, required: !!g.required, max: Math.min(Math.max(parseInt(g.max) || 1, 1), choices.length), choices});
+  }
+  return {value: out};
 }
 $("addMenu").onclick = () => openForm(null);
 $("mCancel").onclick = () => $("menuForm").classList.add("hidden");
 $("mSave").onclick = async () => {
   const name = $("mName").value.trim(), price = parseFloat($("mPrice").value);
   if (!name || isNaN(price) || price < 0){ $("mErr").textContent = "กรอกชื่อและราคาให้ถูกต้อง"; return; }
+  const oc = cleanOpts();
+  if (oc.error){ $("mErr").textContent = oc.error; return; }
   const row = {name, price, category: $("mCat").value.trim() || "อื่น ๆ", sort_order: parseInt($("mSort").value) || 0,
-               description: $("mDesc").value.trim() || null, image_url: $("mImg").value.trim() || null, is_available: $("mAvail").checked};
+               description: $("mDesc").value.trim() || null, image_url: $("mImg").value.trim() || null, is_available: $("mAvail").checked,
+               option_groups: oc.value};
   const id = $("mId").value;
   const {error} = id ? await sb.from("menu_items").update(row).eq("id", id) : await sb.from("menu_items").insert(row);
   if (error){ $("mErr").textContent = error.message; return; }
