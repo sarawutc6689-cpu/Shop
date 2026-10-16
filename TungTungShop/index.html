@@ -65,6 +65,18 @@
   .ch{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);margin:0;font-size:16px;color:var(--ink)}
   .ch input{width:auto;margin:0}
   .ch .p{margin-left:auto;color:var(--muted)}
+  #side{display:none}
+  .side-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px}
+  .side-card h2{margin:0 0 8px;font-size:18px}
+  .side-card .queue{margin-bottom:10px}
+  .side-empty{color:var(--muted);text-align:center;padding:26px 16px}
+  @media(min-width:1000px){
+    header .wrap,main.wrap{max-width:1100px}
+    main.wrap.two{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;align-items:start}
+    main.wrap.two #side{display:block;position:sticky;top:84px}
+    .cartbar{display:none!important}
+    .toast{bottom:24px}
+  }
   .lineqty{display:flex;align-items:center;gap:6px}
   .lineqty button{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:#fff;line-height:1}
 </style>
@@ -78,7 +90,8 @@
   </div>
 </header>
 
-<main class="wrap">
+<main class="wrap two" id="mainWrap">
+<div id="views">
 
   <!-- หน้าเมนู -->
   <section id="vMenu">
@@ -169,6 +182,8 @@
     <button class="btn ghost" id="newOrder" style="width:100%">สั่งอาหารใหม่ / ดูเมนู</button>
   </section>
 
+</div>
+<aside id="side" aria-live="polite"></aside>
 </main>
 
 <div class="cartbar hidden" id="cartbar">
@@ -229,7 +244,7 @@ function loadCart(){
 }
 
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.remove("hidden"); setTimeout(()=>t.classList.add("hidden"),2000); }
-function show(view){ ["vMenu","vCheckout","vOrder"].forEach(v=>$(v).classList.toggle("hidden", v!==view)); updateCartbar(view); window.scrollTo(0,0); }
+function show(view){ ["vMenu","vCheckout","vOrder"].forEach(v=>$(v).classList.toggle("hidden", v!==view)); $("mainWrap").classList.toggle("two", view === "vMenu"); updateCartbar(view); window.scrollTo(0,0); }
 function saveCart(){ localStorage.setItem("cart2", JSON.stringify(cart)); }
 const groupsOf = m => Array.isArray(m && m.option_groups) ? m.option_groups : [];
 const hasOpts = m => groupsOf(m).some(g => (g.choices || []).length);
@@ -285,7 +300,10 @@ async function init(){
   const fromUrl = new URLSearchParams(location.search).get("order");
   const isId = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || "");
   const activeId = isId(fromUrl) ? fromUrl : localStorage.getItem("activeOrder");
-  if (activeId){ await openOrder(activeId); if (currentOrder) localStorage.setItem("activeOrder", currentOrder.id); }
+  if (activeId){
+    await openOrder(activeId, isId(fromUrl) || !wide());   // จอกว้างและไม่ได้เปิดจากลิงก์: อยู่หน้าเมนู แต่แสดงออเดอร์ในแผงขวา
+    if (currentOrder) localStorage.setItem("activeOrder", currentOrder.id);
+  }
 }
 
 function renderChips(){
@@ -379,6 +397,7 @@ function updateCartbar(view){
   const {count, total} = cartInfo();
   $("cbCount").textContent = count; $("cbTotal").textContent = total.toLocaleString("th-TH");
   $("cartbar").classList.toggle("hidden", !(view === "vMenu" && count > 0));
+  renderSide();
 }
 $("cbGo").onclick = () => { renderCheckout(); show("vCheckout"); };
 $("coBack").onclick = () => show("vMenu");
@@ -419,14 +438,15 @@ $("coSubmit").onclick = async () => {
   localStorage.setItem("cName", name); localStorage.setItem("cPhone", phone);
   localStorage.setItem("activeOrder", data.id);
   cart = []; saveCart(); $("cNote").value = ""; renderMenu();
+  $("pAmt").value = ""; $("pTime").value = ""; $("pSlip").value = ""; $("preview").classList.add("hidden");
   await openOrder(data.id);
 };
 
 /* ---------- หน้าออเดอร์ ---------- */
-async function openOrder(id){
+async function openOrder(id, go = true){
   const {data, error} = await sb.rpc("get_order", {p_order_id: id});
   if (error || !data){ localStorage.removeItem("activeOrder"); show("vMenu"); return; }
-  currentOrder = data; renderOrder(); show("vOrder");
+  currentOrder = data; renderOrder(); show(go ? "vOrder" : "vMenu");
   clearInterval(pollTimer);
   pollTimer = setInterval(refreshOrder, 8000);
 }
@@ -463,16 +483,61 @@ function renderOrder(){
   }
 
   // แสดงคิว: เฉพาะออเดอร์ที่ชำระแล้วและกำลังทำ
-  const q = $("queueBox"), ahead = o.queue_ahead;
-  if (ahead == null){ q.classList.add("hidden"); }
-  else {
-    q.classList.remove("hidden");
-    q.innerHTML = o.status === "preparing" && ahead === 0
-      ? "ถึงคิวของคุณแล้ว ร้านกำลังทำอาหาร"
-      : ahead === 0
-        ? "คิวถัดไปคือคุณ"
-        : `มี <span class="big">${ahead}</span> ออเดอร์ก่อนหน้าคุณ`;
+  const q = $("queueBox"), qh = queueHtml(o);
+  if (qh == null){ q.classList.add("hidden"); }
+  else { q.classList.remove("hidden"); q.innerHTML = qh; }
+  renderSide();
+}
+function queueHtml(o){
+  const ahead = o.queue_ahead;
+  if (ahead == null) return null;
+  return o.status === "preparing" && ahead === 0
+    ? "ถึงคิวของคุณแล้ว ร้านกำลังทำอาหาร"
+    : ahead === 0
+      ? "คิวถัดไปคือคุณ"
+      : `มี <span class="big">${ahead}</span> ออเดอร์ก่อนหน้าคุณ`;
+}
+
+/* ---------- แผงด้านขวา (จอกว้าง): คิว + รายการอาหารของออเดอร์ล่าสุด + ตะกร้า ---------- */
+const itemRows = items => items.map(i => `<div class="row"><span>${esc(i.name)} × ${i.qty}${(i.options || []).length ? `<div class="opt">${i.options.map(c => esc(c.name) + (Number(c.price) ? ` (+${c.price})` : "")).join(", ")}</div>` : ""}</span><span>${baht(i.price * i.qty)}</span></div>`).join("");
+function renderSide(){
+  const box = $("side"); if (!box) return;
+  let html = "";
+  const o = currentOrder;
+  if (o){
+    const qh = queueHtml(o), finished = o.status === "done" || o.status === "cancelled";
+    html += `<div class="side-card">
+      <div class="row"><h2 style="margin:0">ออเดอร์ #${o.order_no}</h2><span class="status s-${o.status}">${esc(STATUS[o.status] || o.status)}</span></div>
+      ${qh ? `<div class="queue" style="margin-top:10px">${qh}</div>` : `<p class="muted" style="margin:8px 0">${esc(WAIT_MSG[o.status] || (o.status === "pending_payment" ? "รอชำระเงิน กดปุ่มด้านล่างเพื่อโอนเงิน" : ""))}</p>`}
+      <div>${itemRows(o.items)}</div>
+      <div class="row total"><span>รวม</span><span>${baht(o.total)}</span></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn" id="sideOpen" style="flex:1">${o.status === "pending_payment" ? "ไปชำระเงิน" : "ดูรายละเอียดออเดอร์"}</button>
+        ${finished ? '<button class="btn ghost" id="sideClose">ปิด</button>' : ""}
+      </div></div>`;
   }
+  const {count, total} = cartInfo();
+  if (count > 0){
+    html += `<div class="side-card"><h2>ตะกร้า (${count} รายการ)</h2>
+      ${cart.map(l => { const m = menu.find(x => x.id === l.id); if (!m) return ""; const ch = chosen(m, l.opts);
+        return `<div class="row"><span>${esc(m.name)} × ${l.qty}${ch.length ? `<div class="opt">${ch.map(c => esc(c.name)).join(", ")}</div>` : ""}</span><span>${baht(unitPrice(m, l.opts) * l.qty)}</span></div>`; }).join("")}
+      <div class="row total"><span>รวม</span><span>${baht(total)}</span></div>
+      <button class="btn" id="sideCart" style="width:100%;margin-top:10px">ดูตะกร้า / สั่งเลย</button></div>`;
+  }
+  if (!html) html = '<div class="side-card side-empty">ยังไม่มีออเดอร์ในตอนนี้<br>เลือกเมนูทางซ้ายได้เลย</div>';
+  box.innerHTML = html;
+}
+$("side").addEventListener("click", e => {
+  const id = e.target.id;
+  if (id === "sideOpen" && currentOrder){ renderOrder(); show("vOrder"); }
+  if (id === "sideCart"){ renderCheckout(); show("vCheckout"); }
+  if (id === "sideClose") forgetOrder();
+});
+function forgetOrder(){
+  clearInterval(pollTimer); currentOrder = null; localStorage.removeItem("activeOrder");
+  history.replaceState(null, "", location.pathname);
+  $("pAmt").value = ""; $("pTime").value = ""; $("pSlip").value = ""; $("preview").classList.add("hidden");
+  renderSide();
 }
 /* PP-BEGIN: PromptPay QR (EMVCo / Thai QR Payment) */
 function crc16(str){
@@ -552,10 +617,10 @@ async function pickOrder(id){
   $("lkList").innerHTML = "";
   await openOrder(id);
 }
+const wide = () => window.matchMedia("(min-width:1000px)").matches;
 $("newOrder").onclick = () => {
-  clearInterval(pollTimer); currentOrder = null; localStorage.removeItem("activeOrder");
-  history.replaceState(null, "", location.pathname);
-  $("pAmt").value = ""; $("pTime").value = ""; $("pSlip").value = ""; $("preview").classList.add("hidden");
+  // จอกว้าง: เก็บออเดอร์ล่าสุดไว้แสดงในแผงด้านขวา (ปิดได้เอง) / มือถือ: เริ่มใหม่เหมือนเดิม
+  if (!wide() || !currentOrder) forgetOrder();
   renderMenu(); show("vMenu");
 };
 
