@@ -65,7 +65,18 @@
   .ch{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);margin:0;font-size:16px;color:var(--ink)}
   .ch input{width:auto;margin:0}
   .ch .p{margin-left:auto;color:var(--muted)}
-  #side{display:none}
+  #side,#qLeft{display:none}
+  .qboard .now{text-align:center;background:#fff4e6;border:1px solid #ffd8a8;border-radius:10px;padding:10px;margin-bottom:10px}
+  .qboard .now b{display:block;font-size:30px;line-height:1.15;color:var(--brand)}
+  .qboard ol{list-style:none;margin:0;padding:0;max-height:52vh;overflow:auto}
+  .qboard li{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--line)}
+  .qboard li .k{min-width:62px;color:var(--muted);font-size:13px}
+  .qboard li .n{font-weight:700}
+  .qboard li .st{margin-left:auto;font-size:13px}
+  .qboard li.cooking .st{color:var(--ok);font-weight:600}
+  .qboard li.me{background:#e7f5ff;border-radius:8px;font-weight:700}
+  .qboard li.me .st::after{content:" ← ของคุณ";color:#0b5394}
+  .qboard .qr{display:block}
   .side-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px}
   .side-card h2{margin:0 0 8px;font-size:18px}
   .side-card .queue{margin-bottom:10px}
@@ -74,6 +85,14 @@
     header .wrap,main.wrap{max-width:1100px}
     main.wrap.two{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;align-items:start}
     main.wrap.two #side{display:block;position:sticky;top:84px}
+    #qLeft .qboard{display:none}
+  }
+  @media(min-width:1280px){
+    header .wrap,main.wrap{max-width:1400px}
+    main.wrap.two{grid-template-columns:300px minmax(0,1fr) 380px}
+    main.wrap.two #qLeft{display:block;position:sticky;top:84px}
+    #qLeft .qboard{display:block}
+    #side .qboard{display:none}
     .cartbar{display:none!important}
     .toast{bottom:24px}
   }
@@ -91,6 +110,7 @@
 </header>
 
 <main class="wrap two" id="mainWrap">
+<aside id="qLeft" aria-live="polite"></aside>
 <div id="views">
 
   <!-- หน้าเมนู -->
@@ -244,7 +264,7 @@ function loadCart(){
 }
 
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.remove("hidden"); setTimeout(()=>t.classList.add("hidden"),2000); }
-function show(view){ ["vMenu","vCheckout","vOrder"].forEach(v=>$(v).classList.toggle("hidden", v!==view)); $("mainWrap").classList.toggle("two", view === "vMenu"); updateCartbar(view); window.scrollTo(0,0); }
+function show(view){ ["vMenu","vCheckout","vOrder"].forEach(v=>$(v).classList.toggle("hidden", v!==view)); $("mainWrap").classList.toggle("two", view === "vMenu"); updateCartbar(view); if (view === "vMenu") loadQueue(); window.scrollTo(0,0); }
 function saveCart(){ localStorage.setItem("cart2", JSON.stringify(cart)); }
 const groupsOf = m => Array.isArray(m && m.option_groups) ? m.option_groups : [];
 const hasOpts = m => groupsOf(m).some(g => (g.choices || []).length);
@@ -498,6 +518,34 @@ function queueHtml(o){
       : `มี <span class="big">${ahead}</span> ออเดอร์ก่อนหน้าคุณ`;
 }
 
+/* ---------- กระดานคิวของร้าน (เฉพาะออเดอร์ที่ชำระแล้ว) ---------- */
+const wide = () => window.matchMedia("(min-width:1000px)").matches;
+let queueData = null, queueTimer = null;
+function renderQueueBoard(){
+  const items = queueData ? queueData.items : [], mine = currentOrder ? currentOrder.order_no : null;
+  const cooking = items.filter(i => i.status === "preparing").map(i => "#" + i.order_no);
+  const board = `<div class="side-card qboard">
+    <h2>คิวร้านตอนนี้</h2>
+    <div class="now">${cooking.length ? `กำลังทำ<b>${cooking.slice(0, 4).join(" ")}</b>` : (items.length ? "รอร้านเริ่มทำ<b>#" + items[0].order_no + "</b>" : "ยังไม่มีคิว")}</div>
+    ${items.length ? `<ol>${items.map((i, k) => `<li class="${i.status === "preparing" ? "cooking" : ""} ${i.order_no === mine ? "me" : ""}">
+        <span class="k">คิวที่ ${k + 1}</span><span class="n">#${i.order_no}</span><span class="st">${i.status === "preparing" ? "กำลังทำ" : "รอคิว"}</span></li>`).join("")}</ol>
+      ${queueData.total > items.length ? `<div class="muted" style="margin-top:6px">และอีก ${queueData.total - items.length} ออเดอร์</div>` : ""}`
+      : '<div class="muted" style="text-align:center">ออเดอร์ที่ชำระเงินแล้วจะแสดงที่นี่</div>'}
+    <div class="muted" style="margin-top:8px;font-size:12px">แสดงเฉพาะออเดอร์ที่ชำระเงินแล้ว</div></div>`;
+  $("qLeft").innerHTML = board;
+  const box = $("side"), old = box.querySelector(".qboard"); if (old) old.remove();   // จอแคบกว่า 1280px: แสดงกระดานคิวไว้บนสุดของแผงขวา
+  box.insertAdjacentHTML("afterbegin", board);
+}
+async function loadQueue(){
+  if (document.hidden || !wide() || $("vMenu").classList.contains("hidden")) return;
+  const {data, error} = await sb.rpc("get_queue");
+  if (error || !data) return;
+  queueData = data; renderQueueBoard();
+}
+function startQueuePolling(){ clearInterval(queueTimer); loadQueue(); queueTimer = setInterval(loadQueue, 10000); }
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadQueue(); });
+window.matchMedia("(min-width:1000px)").addEventListener("change", loadQueue);
+
 /* ---------- แผงด้านขวา (จอกว้าง): คิว + รายการอาหารของออเดอร์ล่าสุด + ตะกร้า ---------- */
 const itemRows = items => items.map(i => `<div class="row"><span>${esc(i.name)} × ${i.qty}${(i.options || []).length ? `<div class="opt">${i.options.map(c => esc(c.name) + (Number(c.price) ? ` (+${c.price})` : "")).join(", ")}</div>` : ""}</span><span>${baht(i.price * i.qty)}</span></div>`).join("");
 function renderSide(){
@@ -526,6 +574,7 @@ function renderSide(){
   }
   if (!html) html = '<div class="side-card side-empty">ยังไม่มีออเดอร์ในตอนนี้<br>เลือกเมนูทางซ้ายได้เลย</div>';
   box.innerHTML = html;
+  if (queueData) renderQueueBoard();
 }
 $("side").addEventListener("click", e => {
   const id = e.target.id;
@@ -617,7 +666,6 @@ async function pickOrder(id){
   $("lkList").innerHTML = "";
   await openOrder(id);
 }
-const wide = () => window.matchMedia("(min-width:1000px)").matches;
 $("newOrder").onclick = () => {
   // จอกว้าง: เก็บออเดอร์ล่าสุดไว้แสดงในแผงด้านขวา (ปิดได้เอง) / มือถือ: เริ่มใหม่เหมือนเดิม
   if (!wide() || !currentOrder) forgetOrder();
@@ -670,6 +718,7 @@ $("paySubmit").onclick = async () => {
 };
 
 init();
+startQueuePolling();
 </script>
 </body>
 </html>
