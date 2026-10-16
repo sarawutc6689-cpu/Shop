@@ -54,6 +54,19 @@
   .queue{background:#e7f5ff;border:1px solid #a5d8ff;border-radius:10px;padding:12px;text-align:center;margin-bottom:12px;font-weight:600;color:#0b5394}
   .queue .big{font-size:32px;line-height:1.1;display:block}
   summary{outline:none}
+  .qty button.pick{width:auto;border-radius:99px;padding:0 12px;font-size:14px;font-weight:600;color:var(--brand);border-color:var(--brand)}
+  .opt{font-size:13px;color:var(--muted)}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:flex;align-items:flex-end;justify-content:center}
+  .sheet{background:#fff;width:100%;max-width:720px;max-height:88vh;overflow:auto;border-radius:16px 16px 0 0;padding:16px}
+  .sheet h2{margin:0 0 4px;font-size:18px}
+  .grp{margin-top:14px}
+  .grp .gt{font-weight:600}
+  .grp .req{color:#c92a2a;font-size:13px;font-weight:400}
+  .ch{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);margin:0;font-size:16px;color:var(--ink)}
+  .ch input{width:auto;margin:0}
+  .ch .p{margin-left:auto;color:var(--muted)}
+  .lineqty{display:flex;align-items:center;gap:6px}
+  .lineqty button{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:#fff;line-height:1}
 </style>
 </head>
 <body>
@@ -164,6 +177,19 @@
     <button class="btn" id="cbGo">ดูตะกร้า / สั่งเลย</button>
   </div>
 </div>
+<div class="modal hidden" id="pickModal">
+  <div class="sheet">
+    <h2 id="pkName"></h2>
+    <div class="muted" id="pkDesc"></div>
+    <div id="pkGroups"></div>
+    <div class="err" id="pkErr"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:16px">
+      <div class="qty"><button id="pkMinus" aria-label="ลด">−</button><span id="pkQty">1</span><button id="pkPlus" aria-label="เพิ่ม">+</button></div>
+      <button class="btn" id="pkAdd" style="flex:1"></button>
+      <button class="btn ghost" id="pkCancel">ยกเลิก</button>
+    </div>
+  </div>
+</div>
 <div class="toast hidden" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -191,11 +217,54 @@ const WAIT_MSG = {
 };
 
 let menu = [], settings = {}, cat = "ทั้งหมด", pollTimer = null, currentOrder = null;
-let cart = JSON.parse(localStorage.getItem("cart") || "{}");
+// ตะกร้า = รายการ [{id, opts:[รหัสตัวเลือก], qty}] (เมนูเดียวกันแต่ตัวเลือกต่างกันแยกเป็นคนละบรรทัด)
+let cart = loadCart();
+function loadCart(){
+  try {
+    const v2 = JSON.parse(localStorage.getItem("cart2") || "null");
+    if (Array.isArray(v2)) return v2;
+    const v1 = JSON.parse(localStorage.getItem("cart") || "{}");   // ตะกร้าแบบเก่า {id: qty}
+    return Object.entries(v1).map(([id, qty]) => ({id, opts: [], qty: Number(qty) || 1}));
+  } catch { return []; }
+}
 
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.remove("hidden"); setTimeout(()=>t.classList.add("hidden"),2000); }
 function show(view){ ["vMenu","vCheckout","vOrder"].forEach(v=>$(v).classList.toggle("hidden", v!==view)); updateCartbar(view); window.scrollTo(0,0); }
-function saveCart(){ localStorage.setItem("cart", JSON.stringify(cart)); }
+function saveCart(){ localStorage.setItem("cart2", JSON.stringify(cart)); }
+const groupsOf = m => Array.isArray(m && m.option_groups) ? m.option_groups : [];
+const hasOpts = m => groupsOf(m).some(g => (g.choices || []).length);
+const lineKey = l => l.id + "|" + [...l.opts].sort().join(",");
+function chosen(m, opts){   // [{group,name,price}] ตามเมนูปัจจุบัน
+  const out = [];
+  for (const g of groupsOf(m)) for (const c of g.choices || []) if (opts.includes(c.id)) out.push({group: g.name, name: c.name, price: Math.max(Number(c.price) || 0, 0)});
+  return out;
+}
+const unitPrice = (m, opts) => Number(m.price) + chosen(m, opts).reduce((a, c) => a + c.price, 0);
+function optionsValid(m, opts){
+  const all = new Set(); let matched = 0;
+  for (const g of groupsOf(m)){
+    const ids = (g.choices || []).map(c => c.id), n = ids.filter(i => opts.includes(i)).length;
+    ids.forEach(i => all.add(i)); matched += n;
+    if (g.required && n < 1) return false;
+    if (n > Math.max(Number(g.max) || 1, 1)) return false;
+  }
+  return opts.every(o => all.has(o)) && matched === opts.length;
+}
+// ตัดบรรทัดที่เมนูหมด/ตัวเลือกไม่ตรงกับเมนูปัจจุบัน แล้วรวมบรรทัดซ้ำ
+function normalizeCart(){
+  const seen = new Map();
+  for (const l of cart){
+    const m = menu.find(x => x.id === l.id);
+    if (!m) continue;
+    const opts = [...new Set((l.opts || []).map(String))];
+    if (!optionsValid(m, opts)) continue;
+    const nl = {id: l.id, opts, qty: Math.min(Math.max(parseInt(l.qty) || 1, 1), 50)};
+    const k = lineKey(nl);
+    if (seen.has(k)) seen.get(k).qty = Math.min(seen.get(k).qty + nl.qty, 50); else seen.set(k, nl);
+  }
+  cart = [...seen.values()]; saveCart();
+}
+const qtyOf = id => cart.filter(l => l.id === id).reduce((a, l) => a + l.qty, 0);
 
 /* ---------- โหลดข้อมูล ---------- */
 async function init(){
@@ -206,9 +275,7 @@ async function init(){
   if (s.error || m.error){ $("menuList").innerHTML = '<p class="err">โหลดข้อมูลไม่สำเร็จ ตรวจสอบ config.js และ schema.sql</p>'; return; }
   settings = Object.fromEntries(s.data.map(r => [r.key, r.value]));
   menu = m.data;
-  // ลบสินค้าในตะกร้าที่ไม่มีขายแล้ว
-  Object.keys(cart).forEach(id => { if (!menu.find(x => x.id === id)) delete cart[id]; });
-  saveCart();
+  normalizeCart();   // ลบสินค้า/ตัวเลือกที่ไม่มีขายแล้วออกจากตะกร้า
   $("shopName").textContent = settings.shop_name || "สั่งอาหารออนไลน์";
   document.title = $("shopName").textContent;
   $("shopNotice").textContent = settings.shop_notice || "";
@@ -238,23 +305,74 @@ function renderMenu(){
         ${x.description ? `<div class="desc">${esc(x.description)}</div>` : ""}
         <div class="price">${baht(x.price)}</div>
       </div>
-      <div class="qty">
-        ${cart[x.id] ? `<button data-dec="${x.id}">−</button><span>${cart[x.id]}</span>` : ""}
-        <button data-inc="${x.id}">+</button>
+      <div class="qty">${hasOpts(x)
+        ? `${qtyOf(x.id) ? `<span>${qtyOf(x.id)}</span>` : ""}<button class="pick" data-pick="${x.id}">${qtyOf(x.id) ? "+ เพิ่ม" : "เลือก"}</button>`
+        : `${qtyOf(x.id) ? `<button data-dec="${x.id}">−</button><span>${qtyOf(x.id)}</span>` : ""}<button data-inc="${x.id}">+</button>`}
       </div>
     </div>`).join("");
 }
 $("menuList").addEventListener("click", e => {
-  const inc = e.target.dataset.inc, dec = e.target.dataset.dec;
-  if (inc){ cart[inc] = Math.min((cart[inc] || 0) + 1, 50); }
-  if (dec){ cart[dec] = (cart[dec] || 0) - 1; if (cart[dec] <= 0) delete cart[dec]; }
+  const inc = e.target.dataset.inc, dec = e.target.dataset.dec, pick = e.target.dataset.pick;
+  if (pick){ openPicker(pick); return; }
+  if (inc) addLine(inc, [], 1);
+  if (dec){
+    const l = cart.find(x => x.id === dec && !x.opts.length);
+    if (l){ l.qty -= 1; if (l.qty <= 0) cart = cart.filter(x => x !== l); }
+  }
   if (inc || dec){ saveCart(); renderMenu(); updateCartbar("vMenu"); }
 });
+function addLine(id, opts, qty){
+  const nl = {id, opts, qty}, k = lineKey(nl), ex = cart.find(l => lineKey(l) === k);
+  if (ex) ex.qty = Math.min(ex.qty + qty, 50); else cart.push(nl);
+}
+
+/* ---------- เลือกตัวเลือกเสริม ---------- */
+let pk = null;   // {m, sel:Set, qty}
+function openPicker(id){
+  const m = menu.find(x => x.id === id); if (!m) return;
+  pk = {m, sel: new Set(), qty: 1};
+  $("pkName").textContent = m.name; $("pkDesc").textContent = m.description || ""; $("pkErr").textContent = "";
+  $("pkGroups").innerHTML = groupsOf(m).map((g, gi) => {
+    const max = Math.max(Number(g.max) || 1, 1), single = max === 1;
+    const hint = (g.required ? '<span class="req">* ต้องเลือก</span> ' : "") + (single ? "" : `<span class="muted">(เลือกได้ไม่เกิน ${max})</span>`);
+    return `<div class="grp"><div class="gt">${esc(g.name)} ${hint}</div>` + (g.choices || []).map(c => `
+      <label class="ch"><input type="${single ? "radio" : "checkbox"}" name="g${gi}" data-g="${gi}" value="${esc(c.id)}">
+        <span>${esc(c.name)}</span><span class="p">${Number(c.price) > 0 ? "+" + baht(c.price) : ""}</span></label>`).join("") + "</div>";
+  }).join("");
+  updatePicker(); $("pickModal").classList.remove("hidden");
+}
+function pickedIds(){ return [...document.querySelectorAll("#pkGroups input:checked")].map(i => i.value); }
+function updatePicker(){
+  if (!pk) return;
+  const ids = pickedIds();
+  $("pkQty").textContent = pk.qty;
+  $("pkAdd").textContent = "ใส่ตะกร้า · " + baht(unitPrice(pk.m, ids) * pk.qty);
+}
+$("pkGroups").addEventListener("change", e => {
+  const t = e.target; if (t.type !== "checkbox") { updatePicker(); return; }
+  const g = groupsOf(pk.m)[Number(t.dataset.g)], max = Math.max(Number(g.max) || 1, 1);
+  const n = document.querySelectorAll(`#pkGroups input[data-g="${t.dataset.g}"]:checked`).length;
+  if (n > max){ t.checked = false; $("pkErr").textContent = `"${g.name}" เลือกได้ไม่เกิน ${max} อย่าง`; } else $("pkErr").textContent = "";
+  updatePicker();
+});
+$("pkMinus").onclick = () => { if (pk && pk.qty > 1){ pk.qty--; updatePicker(); } };
+$("pkPlus").onclick  = () => { if (pk && pk.qty < 50){ pk.qty++; updatePicker(); } };
+$("pkCancel").onclick = () => { $("pickModal").classList.add("hidden"); pk = null; };
+$("pickModal").addEventListener("click", e => { if (e.target === $("pickModal")) $("pkCancel").onclick(); });
+$("pkAdd").onclick = () => {
+  const ids = pickedIds();
+  for (const g of groupsOf(pk.m)){
+    const n = (g.choices || []).filter(c => ids.includes(c.id)).length;
+    if (g.required && n < 1){ $("pkErr").textContent = `กรุณาเลือก "${g.name}"`; return; }
+  }
+  addLine(pk.m.id, ids, pk.qty); saveCart(); $("pkCancel").onclick();
+  renderMenu(); updateCartbar("vMenu"); toast("ใส่ตะกร้าแล้ว");
+};
 
 /* ---------- ตะกร้า ---------- */
 function cartInfo(){
   let count = 0, total = 0;
-  for (const [id, q] of Object.entries(cart)){ const m = menu.find(x => x.id === id); if (m){ count += q; total += m.price * q; } }
+  for (const l of cart){ const m = menu.find(x => x.id === l.id); if (m){ count += l.qty; total += unitPrice(m, l.opts) * l.qty; } }
   return {count, total};
 }
 function updateCartbar(view){
@@ -266,20 +384,33 @@ $("cbGo").onclick = () => { renderCheckout(); show("vCheckout"); };
 $("coBack").onclick = () => show("vMenu");
 
 function renderCheckout(){
-  const lines = Object.entries(cart).map(([id, q]) => ({m: menu.find(x => x.id === id), q})).filter(l => l.m);
-  $("cartLines").innerHTML = lines.map(({m, q}) => `
-    <div class="row"><span>${esc(m.name)} × ${q}</span><span>${baht(m.price * q)}</span></div>`).join("");
+  $("cartLines").innerHTML = cart.map((l, i) => {
+    const m = menu.find(x => x.id === l.id), ch = chosen(m, l.opts);
+    return `<div class="row" style="align-items:center">
+      <span>${esc(m.name)}${ch.length ? `<div class="opt">${ch.map(c => esc(c.name) + (c.price ? ` (+${c.price})` : "")).join(", ")}</div>` : ""}
+        <span class="lineqty"><button data-li="${i}" data-d="-1">−</button><b>${l.qty}</b><button data-li="${i}" data-d="1">+</button></span></span>
+      <span>${baht(unitPrice(m, l.opts) * l.qty)}</span></div>`;
+  }).join("");
   $("cartTotal").textContent = baht(cartInfo().total);
   $("cName").value = localStorage.getItem("cName") || "";
   $("cPhone").value = localStorage.getItem("cPhone") || "";
 }
+
+$("cartLines").addEventListener("click", e => {
+  const i = e.target.dataset.li; if (i === undefined) return;
+  const l = cart[Number(i)]; if (!l) return;
+  l.qty = Math.min(l.qty + Number(e.target.dataset.d), 50);
+  if (l.qty <= 0) cart.splice(Number(i), 1);
+  saveCart(); renderCheckout(); updateCartbar("vCheckout"); renderMenu();
+  if (!cart.length) show("vMenu");
+});
 
 $("coSubmit").onclick = async () => {
   const name = $("cName").value.trim(), phone = $("cPhone").value.trim();
   $("coErr").textContent = "";
   if (!name || !phone){ $("coErr").textContent = "กรุณากรอกชื่อและเบอร์โทร"; return; }
   if (!/^[0-9+\-\s]{8,15}$/.test(phone)){ $("coErr").textContent = "รูปแบบเบอร์โทรไม่ถูกต้อง"; return; }
-  const items = Object.entries(cart).map(([id, qty]) => ({id, qty}));
+  const items = cart.map(l => ({id: l.id, qty: l.qty, opts: l.opts}));
   if (!items.length){ $("coErr").textContent = "ตะกร้าว่างเปล่า"; return; }
   $("coSubmit").disabled = true;
   const {data, error} = await sb.rpc("create_order", {p_name: name, p_phone: phone, p_note: $("cNote").value, p_items: items});
@@ -287,7 +418,7 @@ $("coSubmit").onclick = async () => {
   if (error){ $("coErr").textContent = error.message; return; }
   localStorage.setItem("cName", name); localStorage.setItem("cPhone", phone);
   localStorage.setItem("activeOrder", data.id);
-  cart = {}; saveCart(); $("cNote").value = "";
+  cart = []; saveCart(); $("cNote").value = ""; renderMenu();
   await openOrder(data.id);
 };
 
@@ -313,7 +444,7 @@ function renderOrder(){
   $("oNo").textContent = o.order_no;
   $("oStatus").textContent = STATUS[o.status] || o.status;
   $("oStatus").className = "status s-" + o.status;
-  $("oItems").innerHTML = o.items.map(i => `<div class="row"><span>${esc(i.name)} × ${i.qty}</span><span>${baht(i.price * i.qty)}</span></div>`).join("");
+  $("oItems").innerHTML = o.items.map(i => `<div class="row"><span>${esc(i.name)} × ${i.qty}${(i.options || []).length ? `<div class="opt">${i.options.map(c => esc(c.name) + (Number(c.price) ? ` (+${c.price})` : "")).join(", ")}</div>` : ""}</span><span>${baht(i.price * i.qty)}</span></div>`).join("");
   $("oTotal").textContent = baht(o.total);
 
   const canPay = o.status === "pending_payment";
