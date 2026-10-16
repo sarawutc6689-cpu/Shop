@@ -75,6 +75,7 @@
     #printArea .r{display:flex;justify-content:space-between;gap:8px}
     #printArea .o{padding-left:10px;font-size:12px}
   }
+  .site-foot{max-width:1100px;margin:24px auto 0;padding:16px;text-align:center;font-size:12px;line-height:1.7;color:#888;border-top:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -172,6 +173,11 @@
   </main>
 </div>
 
+<footer class="site-foot">
+  <div>ระบบออเดอร์อาหาร | ใช้ในกิจการส่วนตัวเท่านั้น | พัฒนาโดย Sarawut.C</div>
+  <div>&copy; <span id="footYear">2026</span> Sarawut.C. สงวนลิขสิทธิ์ทั้งหมด (All rights reserved.)</div>
+</footer>
+<script>document.getElementById("footYear").textContent = new Date().getFullYear();</script>
 <div id="modal" class="modal hidden"></div>
 <div id="printArea"></div>
 
