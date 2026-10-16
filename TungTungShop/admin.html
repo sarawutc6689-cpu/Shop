@@ -54,6 +54,9 @@
   .og label{margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap}
   .og input[type=checkbox]{width:auto}
   .opt{font-size:13px;color:var(--muted)}
+  #adminMap{height:62vh;min-height:320px;border-radius:12px;border:1px solid var(--line);z-index:0}
+  .tag{display:inline-block;padding:2px 8px;border-radius:99px;background:#fff4e6;color:#c94a07;font-size:12px;font-weight:600;margin-left:6px}
+  a.btn{display:inline-block;text-decoration:none;line-height:1.3}
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0}
   .stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px}
   .stat b{display:block;font-size:22px;margin-top:2px}
@@ -93,6 +96,7 @@
     <div class="wrap">
       <button class="tab on" data-t="tOrders">ออเดอร์ <span class="badge hidden" id="newBadge">0</span></button>
       <button class="tab" data-t="tMenu">เมนู</button>
+      <button class="tab" data-t="tMap">แผนที่จัดส่ง</button>
       <button class="tab" data-t="tReport">รายงาน</button>
       <button class="tab" data-t="tSettings">ตั้งค่าร้าน</button>
       <span class="grow"></span>
@@ -132,6 +136,15 @@
       <div id="menuAdminList"></div>
     </section>
 
+    <!-- แผนที่จัดส่ง -->
+    <section id="tMap" class="hidden">
+      <div class="row"><h2 style="margin:8px 0">แผนที่จัดส่ง</h2><span class="muted" id="mapCount"></span></div>
+      <div class="muted" style="margin-bottom:8px">หมุดของออเดอร์จัดส่งที่ยังไม่เสร็จ/ไม่ยกเลิก 🏪 = ที่ตั้งร้าน (ตั้งได้ในแท็บตั้งค่าร้าน) กดหมุดเพื่อดูรายละเอียดและนำทาง</div>
+      <div id="adminMap"></div>
+      <div id="mapList"></div>
+      <div class="err" id="mapErr"></div>
+    </section>
+
     <!-- รายงานยอดขาย -->
     <section id="tReport" class="hidden">
       <h2 style="margin:8px 0">รายงานยอดขาย</h2>
@@ -164,6 +177,9 @@
         <label for="sNotice">ข้อความใต้ชื่อร้าน</label><input id="sNotice">
         <label for="sPP">PromptPay ID สำหรับสร้าง QR ตามยอด (เบอร์โทร 10 หลัก / เลขบัตรประชาชน-ภาษี 13 หลัก / e-wallet 15 หลัก)</label>
         <input id="sPP" inputmode="numeric" placeholder="เว้นว่าง = ไม่แสดง QR ให้ลูกค้า">
+        <label for="sLat">พิกัดร้าน (ใช้เป็นจุดกลางแผนที่จัดส่ง)</label>
+        <div class="grid2"><input id="sLat" inputmode="decimal" placeholder="ละติจูด เช่น 13.7563"><input id="sLng" inputmode="decimal" placeholder="ลองจิจูด เช่น 100.5018"></div>
+        <button class="btn sm ghost" id="sLocate" type="button" style="margin-top:6px">📍 ใช้ตำแหน่งปัจจุบันของอุปกรณ์นี้</button>
         <label style="margin-top:16px"><input type="checkbox" id="sAuto" style="width:auto"> ยืนยันรับเงินอัตโนมัติเมื่อตรวจสลิปผ่านครบ</label>
         <div class="muted">ใช้ได้เมื่อติดตั้งฟังก์ชันตรวจสลิปและเปิดตรวจบัญชีผู้รับแล้วเท่านั้น (ดู README) ถ้าไม่ผ่านระบบจะไม่ยืนยันให้ แต่จะแจ้งเตือนและแสดงเหตุผลที่ออเดอร์</div>
         <div class="err" id="sErr"></div>
@@ -232,15 +248,16 @@ document.addEventListener("click", () => { if (audioCtx && audioCtx.state === "s
 
 document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
   document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === b));
-  ["tOrders","tMenu","tReport","tSettings"].forEach(id => $(id).classList.toggle("hidden", id !== b.dataset.t));
+  ["tOrders","tMenu","tMap","tReport","tSettings"].forEach(id => $(id).classList.toggle("hidden", id !== b.dataset.t));
   if (b.dataset.t === "tOrders") setBadge(0);
+  if (b.dataset.t === "tMap") openMapTab();
 });
 
 /* ---------- ออเดอร์ ---------- */
 async function loadOrders(){
   const {data, error} = await sb.from("orders").select("*, order_items(*)").order("created_at", {ascending:false}).limit(200);
   if (error){ $("orderList").innerHTML = `<p class="err">โหลดออเดอร์ไม่สำเร็จ: ${esc(error.message)}</p>`; return; }
-  orders = data; renderFilters(); renderOrders();
+  orders = data; renderFilters(); renderOrders(); renderMap();
 }
 function renderFilters(){
   const defs = [["active","กำลังดำเนินการ"],["payment_submitted","รอตรวจสลิป"],["pending_payment","รอชำระ"],["done","เสร็จแล้ว"],["cancelled","ยกเลิก"],["all","ทั้งหมด"]];
@@ -261,6 +278,7 @@ function ticketHtml(o){
     <div class="c">${fmtT(o.created_at)}</div>
     <hr>
     <div><b>${esc(o.customer_name)}</b> · ${esc(o.phone)}</div>
+    <div><b>${o.fulfil === "delivery" ? "🛵 จัดส่ง" : "รับที่ร้าน"}</b></div>
     ${o.note ? `<div>หมายเหตุ: <b>${esc(o.note)}</b></div>` : ""}
     <hr>
     ${itemsOf(o).map(i => `<div class="r"><b>${i.qty} × ${esc(i.name)}</b><span>${baht(i.price * i.qty)}</span></div>` +
@@ -305,13 +323,17 @@ function renderOrders(){
     if (o.status === "pending_payment") acts.push(`<button class="btn sm ok" data-set="${o.id}:paid">รับเงินแล้ว (ยืนยันเอง)</button>`);
     if (o.status === "paid") acts.push(`<button class="btn sm ok" data-set="${o.id}:preparing">เริ่มทำอาหาร</button>`);
     if (o.status === "preparing") acts.push(`<button class="btn sm ok" data-set="${o.id}:done">ทำเสร็จแล้ว</button>`);
+    if (o.fulfil === "delivery" && hasGeo(o)){
+      acts.push(`<button class="btn sm ghost" data-map="${o.id}">🗺️ ดูบนแผนที่</button>`);
+      acts.push(`<a class="btn sm ghost" href="${navUrl(o)}" target="_blank" rel="noopener">🧭 นำทาง (Google Maps)</a>`);
+    }
     if (o.status !== "cancelled") acts.push(`<button class="btn sm ghost" data-print="${o.id}">🖨️ พิมพ์ใบออเดอร์</button>`);
     if (o.slip_path && o.status !== "payment_submitted") acts.push(`<button class="btn sm ghost" data-slip="${esc(o.slip_path)}">ดูสลิป</button>`);
     if (!["done","cancelled"].includes(o.status)) acts.push(`<button class="btn sm red" data-set="${o.id}:cancelled">ยกเลิก</button>`);
     return `
     <div class="card ${o.status==="payment_submitted"?"alert":""}">
       <div class="row">
-        <strong>#${o.order_no} · ${esc(o.customer_name)} · <a href="tel:${esc(o.phone)}">${esc(o.phone)}</a></strong>
+        <strong>#${o.order_no} · ${esc(o.customer_name)} · <a href="tel:${esc(o.phone)}">${esc(o.phone)}</a>${o.fulfil === "delivery" ? '<span class="tag">🛵 จัดส่ง</span>' : ""}</strong>
         <span class="status s-${o.status}">${STATUS[o.status]}</span>
       </div>
       <div class="muted">สั่งเมื่อ ${fmtT(o.created_at)}</div>
@@ -328,7 +350,8 @@ function renderOrders(){
 }
 
 $("orderList").onclick = async e => {
-  const set = e.target.dataset.set, slip = e.target.dataset.slip, pr = e.target.dataset.print;
+  const set = e.target.dataset.set, slip = e.target.dataset.slip, pr = e.target.dataset.print, mp = e.target.dataset.map;
+  if (mp){ focusOrderId = mp; document.querySelector('[data-t="tMap"]').click(); return; }
   if (pr){ const o = orders.find(x => x.id === pr); if (o){ markPrinted(o.id); printOrder(o); } return; }
   if (set){
     const [id, status] = set.split(":");
@@ -365,6 +388,59 @@ function subscribe(){
       $("liveTxt").textContent = live ? "ออนไลน์ (realtime)" : "กำลังเชื่อมต่อ…";
     });
 }
+
+/* ---------- แผนที่จัดส่ง (Leaflet + OpenStreetMap) ---------- */
+const validLL = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180 && !(a === 0 && b === 0);
+const hasGeo = o => validLL(Number(o.lat), Number(o.lng)) && o.lat !== null && o.lng !== null;
+const navUrl = o => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(Number(o.lat) + "," + Number(o.lng))}`;
+let lmap = null, mapLayer = null, mapMarkers = new Map(), leafletP = null, focusOrderId = null;
+function loadLeaflet(){
+  if (window.L) return Promise.resolve();
+  if (leafletP) return leafletP;
+  leafletP = new Promise((resolve, reject) => {
+    const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css";
+    const js = document.createElement("script"); js.src = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
+    js.onload = resolve; js.onerror = () => reject(new Error("โหลดแผนที่ไม่สำเร็จ ตรวจสอบอินเทอร์เน็ต"));
+    document.head.append(css, js);
+  }).catch(e => { leafletP = null; throw e; });
+  return leafletP;
+}
+const mapOrders = () => orders.filter(o => o.fulfil === "delivery" && hasGeo(o) && !["done", "cancelled"].includes(o.status));
+async function openMapTab(){
+  $("mapErr").textContent = "";
+  try { await loadLeaflet(); } catch (e){ $("mapErr").textContent = e.message; return; }
+  const la = parseFloat($("sLat").value), ln = parseFloat($("sLng").value);
+  if (!lmap){
+    lmap = L.map("adminMap").setView(validLL(la, ln) ? [la, ln] : [13.7563, 100.5018], 13);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 19, attribution: "© OpenStreetMap contributors"}).addTo(lmap);
+    mapLayer = L.layerGroup().addTo(lmap);
+  }
+  setTimeout(() => { lmap.invalidateSize(); renderMap(); }, 60);
+}
+function renderMap(){
+  if (!lmap || $("tMap").classList.contains("hidden")) return;
+  mapLayer.clearLayers(); mapMarkers = new Map();
+  const pts = [], list = mapOrders(), la = parseFloat($("sLat").value), ln = parseFloat($("sLng").value);
+  if (validLL(la, ln)){
+    L.marker([la, ln], {title: "ร้าน", icon: L.divIcon({className: "", html: '<div style="font-size:26px;line-height:1">🏪</div>', iconSize: [26, 26], iconAnchor: [13, 13]})}).addTo(mapLayer);
+    pts.push([la, ln]);
+  }
+  for (const o of list){
+    const ll = [Number(o.lat), Number(o.lng)]; pts.push(ll);
+    const m = L.marker(ll, {title: "#" + o.order_no}).addTo(mapLayer);
+    m.bindPopup(`<b>#${o.order_no} · ${esc(o.customer_name)}</b><br><a href="tel:${esc(o.phone)}">${esc(o.phone)}</a><br>${esc(STATUS[o.status] || o.status)} · ${baht(o.total)}` +
+      (o.note ? `<br>หมายเหตุ: ${esc(o.note)}` : "") + `<br><a href="${navUrl(o)}" target="_blank" rel="noopener">🧭 นำทาง (Google Maps)</a>`);
+    mapMarkers.set(o.id, m);
+  }
+  $("mapCount").textContent = `${list.length} ออเดอร์จัดส่งที่ค้างอยู่`;
+  $("mapList").innerHTML = list.map(o => `<div class="card row"><span><b>#${o.order_no}</b> · ${esc(o.customer_name)} <span class="muted">${esc(STATUS[o.status] || o.status)}</span></span>
+    <span class="acts" style="margin:0"><button class="btn sm ghost" data-focus="${o.id}">ดูหมุด</button><a class="btn sm ghost" href="${navUrl(o)}" target="_blank" rel="noopener">🧭 นำทาง</a></span></div>`).join("") || '<p class="muted">ไม่มีออเดอร์จัดส่งที่ค้างอยู่</p>';
+  const target = focusOrderId && mapMarkers.get(focusOrderId);
+  if (target){ lmap.setView(target.getLatLng(), 17); target.openPopup(); focusOrderId = null; }
+  else if (pts.length > 1) lmap.fitBounds(pts, {padding: [40, 40], maxZoom: 16});
+  else if (pts.length === 1) lmap.setView(pts[0], 15);
+}
+$("mapList").onclick = e => { const id = e.target.dataset.focus; if (id && mapMarkers.get(id)){ const m = mapMarkers.get(id); lmap.setView(m.getLatLng(), 17); m.openPopup(); window.scrollTo(0, 0); } };
 
 /* ---------- รายงานยอดขาย ---------- */
 const TZ_MS = 7 * 3600 * 1000;                                   // เวลาไทย UTC+7 (ไม่มี DST)
@@ -577,7 +653,7 @@ $("menuAdminList").onclick = async e => {
 };
 
 /* ---------- ตั้งค่า ---------- */
-const SKEYS = {shop_name:"sShop", bank_name:"sBank", account_no:"sAcc", account_name:"sName", shop_notice:"sNotice", promptpay_id:"sPP"};
+const SKEYS = {shop_name:"sShop", bank_name:"sBank", account_no:"sAcc", account_name:"sName", shop_notice:"sNotice", promptpay_id:"sPP", shop_lat:"sLat", shop_lng:"sLng"};
 async function loadSettings(){
   const {data} = await sb.from("settings").select("*");
   (data || []).forEach(r => {
@@ -585,7 +661,16 @@ async function loadSettings(){
     if (r.key === "auto_confirm") $("sAuto").checked = r.value === "1";
   });
 }
+$("sLocate").onclick = () => {
+  if (!navigator.geolocation){ alert("เบราว์เซอร์นี้ไม่รองรับ GPS"); return; }
+  navigator.geolocation.getCurrentPosition(p => { $("sLat").value = p.coords.latitude.toFixed(6); $("sLng").value = p.coords.longitude.toFixed(6); },
+    () => alert("อ่านตำแหน่งไม่ได้ (ยังไม่ได้อนุญาตตำแหน่งให้เว็บนี้) พิมพ์พิกัดเองได้"), {enableHighAccuracy: true, timeout: 15000});
+};
 $("sSave").onclick = async () => {
+  const la = $("sLat").value.trim(), ln = $("sLng").value.trim();
+  if ((la || ln) && !(validLL(parseFloat(la), parseFloat(ln)) && /^-?\d+(\.\d+)?$/.test(la) && /^-?\d+(\.\d+)?$/.test(ln))){
+    $("sErr").style.color = ""; $("sErr").textContent = "พิกัดร้านไม่ถูกต้อง (ละติจูด -90..90, ลองจิจูด -180..180) หรือเว้นว่างทั้งสองช่อง"; return;
+  }
   const rows = Object.entries(SKEYS).map(([key, id]) => ({key, value: $(id).value.trim()}));
   rows.push({key: "auto_confirm", value: $("sAuto").checked ? "1" : "0"});
   const {error} = await sb.from("settings").upsert(rows);
