@@ -65,6 +65,11 @@
   .ch{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);margin:0;font-size:16px;color:var(--ink)}
   .ch input{width:auto;margin:0}
   .ch .p{margin-left:auto;color:var(--muted)}
+  .seg{display:flex;gap:8px}
+  .seg label{flex:1;margin:0;border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;gap:8px;align-items:center;cursor:pointer;background:#fff;color:var(--ink)}
+  .seg input{width:auto;margin:0}
+  .seg label.on{border-color:var(--brand);background:#fff4e6;font-weight:600}
+  #geoMap{height:260px;border-radius:10px;margin-top:8px;border:1px solid var(--line);z-index:0}
   #side,#qLeft{display:none}
   .qboard .now{text-align:center;background:#fff4e6;border:1px solid #ffd8a8;border-radius:10px;padding:10px;margin-bottom:10px}
   .qboard .now b{display:block;font-size:30px;line-height:1.15;color:var(--brand)}
@@ -143,7 +148,18 @@
       <input id="cName" autocomplete="name" maxlength="100">
       <label for="cPhone">เบอร์โทร</label>
       <input id="cPhone" type="tel" autocomplete="tel" maxlength="30">
-      <label for="cNote">หมายเหตุ (ที่อยู่/โต๊ะ/เวลารับ ฯลฯ)</label>
+      <label>รูปแบบการรับอาหาร</label>
+      <div class="seg" id="fulfilSeg">
+        <label><input type="radio" name="fulfil" value="pickup" checked> 🏪 รับที่ร้าน</label>
+        <label><input type="radio" name="fulfil" value="delivery"> 🛵 จัดส่ง</label>
+      </div>
+      <div id="geoBox" class="hidden">
+        <div class="muted" style="margin-top:8px">ตำแหน่งนี้ใช้เพื่อจัดส่งออเดอร์นี้เท่านั้น ร้านเท่านั้นที่เห็น ไม่แสดงให้ผู้อื่น และไม่ถูกจำไว้ในเครื่องคุณ</div>
+        <button class="btn ghost" id="geoGo" type="button" style="width:100%;margin-top:8px">📍 ใช้ตำแหน่งปัจจุบันของฉัน</button>
+        <div class="muted" id="geoMsg" role="status" style="margin-top:6px"></div>
+        <div id="geoMap"></div>
+      </div>
+      <label for="cNote">หมายเหตุ (ที่อยู่/จุดสังเกต/โต๊ะ/เวลารับ ฯลฯ)</label>
       <textarea id="cNote" rows="2" maxlength="300"></textarea>
       <div class="err" id="coErr"></div>
       <div style="display:flex;gap:8px;margin-top:14px">
@@ -270,7 +286,8 @@ function loadCart(){
 }
 
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.remove("hidden"); setTimeout(()=>t.classList.add("hidden"),2000); }
-function show(view){ ["vMenu","vCheckout","vOrder"].forEach(v=>$(v).classList.toggle("hidden", v!==view)); $("mainWrap").classList.toggle("two", view === "vMenu"); updateCartbar(view); if (view === "vMenu") loadQueue(); window.scrollTo(0,0); }
+function show(view){ ["vMenu","vCheckout","vOrder"].forEach(v=>$(v).classList.toggle("hidden", v!==view)); $("mainWrap").classList.toggle("two", view === "vMenu"); updateCartbar(view); if (view === "vMenu") loadQueue();
+  if (view === "vCheckout" && gmap) setTimeout(() => gmap.invalidateSize(), 60); window.scrollTo(0,0); }
 function saveCart(){ localStorage.setItem("cart2", JSON.stringify(cart)); }
 const groupsOf = m => Array.isArray(m && m.option_groups) ? m.option_groups : [];
 const hasOpts = m => groupsOf(m).some(g => (g.choices || []).length);
@@ -413,6 +430,70 @@ $("pkAdd").onclick = () => {
   renderMenu(); updateCartbar("vMenu"); toast("ใส่ตะกร้าแล้ว");
 };
 
+/* ---------- จัดส่ง: GPS + แผนที่ปักหมุด (Leaflet + OpenStreetMap) ---------- */
+let geo = {lat: null, lng: null}, gmap = null, gmarker = null, leafletP = null;
+function loadLeaflet(){
+  if (window.L) return Promise.resolve();
+  if (leafletP) return leafletP;
+  leafletP = new Promise((resolve, reject) => {
+    const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css";
+    const js = document.createElement("script"); js.src = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
+    js.onload = resolve; js.onerror = () => reject(new Error("โหลดแผนที่ไม่สำเร็จ"));
+    document.head.append(css, js);
+  }).catch(e => { leafletP = null; throw e; });
+  return leafletP;
+}
+const validLL = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180 && !(a === 0 && b === 0);
+function shopCenter(){
+  const a = parseFloat(settings.shop_lat), b = parseFloat(settings.shop_lng);
+  return validLL(a, b) ? [a, b] : [13.7563, 100.5018];   // ค่าเริ่มต้น: กรุงเทพฯ
+}
+function geoSay(t){ $("geoMsg").textContent = t; }
+function setPin(lat, lng, say){
+  geo = {lat, lng};
+  if (!gmarker){
+    gmarker = L.marker([lat, lng], {draggable: true}).addTo(gmap);
+    gmarker.on("dragend", () => { const p = gmarker.getLatLng(); geo = {lat: p.lat, lng: p.lng}; geoSay(`ปักหมุดแล้ว (${p.lat.toFixed(5)}, ${p.lng.toFixed(5)})`); });
+  } else gmarker.setLatLng([lat, lng]);
+  gmap.setView([lat, lng], Math.max(gmap.getZoom(), 17));
+  geoSay(say || `ปักหมุดแล้ว (${lat.toFixed(5)}, ${lng.toFixed(5)}) ลากหมุดเพื่อปรับให้ตรงบ้านได้`);
+}
+async function ensureMap(){
+  await loadLeaflet();
+  if (gmap){ gmap.invalidateSize(); return; }
+  gmap = L.map("geoMap").setView(shopCenter(), 14);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 19, attribution: "© OpenStreetMap contributors"}).addTo(gmap);
+  gmap.on("click", e => setPin(e.latlng.lat, e.latlng.lng));
+}
+function locate(){
+  if (!navigator.geolocation){ geoSay("เบราว์เซอร์นี้ไม่รองรับ GPS แตะบนแผนที่เพื่อปักหมุดเอง"); return; }
+  $("geoGo").disabled = true; geoSay("กำลังหาตำแหน่ง… (กรุณากดอนุญาตเมื่อเบราว์เซอร์ถาม)");
+  navigator.geolocation.getCurrentPosition(pos => {
+    $("geoGo").disabled = false;
+    const {latitude, longitude, accuracy} = pos.coords;
+    if (!validLL(latitude, longitude)){ geoSay("ได้ค่าตำแหน่งที่ไม่ถูกต้อง แตะบนแผนที่เพื่อปักหมุดเอง"); return; }
+    setPin(latitude, longitude, `ได้ตำแหน่งแล้ว (แม่นยำประมาณ ${Math.round(accuracy)} เมตร)` + (accuracy > 150 ? " — ความแม่นยำต่ำ กรุณาลากหมุดให้ตรงบ้าน" : " ลากหมุดเพื่อปรับได้"));
+  }, err => {
+    $("geoGo").disabled = false;
+    geoSay(err.code === 1 ? "ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง แตะบนแผนที่เพื่อปักหมุดเองได้ (หรือเปิดสิทธิ์ตำแหน่งให้เว็บนี้ในเบราว์เซอร์)"
+         : err.code === 3 ? "หาตำแหน่งนานเกินไป ลองใหม่ หรือแตะบนแผนที่เพื่อปักหมุดเอง"
+         : "หาตำแหน่งไม่ได้ แตะบนแผนที่เพื่อปักหมุดเอง");
+  }, {enableHighAccuracy: true, timeout: 15000, maximumAge: 0});
+}
+const fulfilVal = () => document.querySelector('input[name="fulfil"]:checked').value;
+async function applyFulfil(auto){
+  const d = fulfilVal() === "delivery";
+  document.querySelectorAll("#fulfilSeg label").forEach(l => l.classList.toggle("on", l.querySelector("input").checked));
+  $("geoBox").classList.toggle("hidden", !d);
+  try { localStorage.setItem("fulfil", fulfilVal()); } catch {}
+  if (!d) return;
+  try { await ensureMap(); } catch (e){ geoSay(e.message + " กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่"); return; }
+  if (auto && geo.lat == null){ geoSay("แตะบนแผนที่เพื่อปักหมุด หรือกดปุ่มใช้ตำแหน่งปัจจุบัน"); locate(); }
+}
+$("fulfilSeg").addEventListener("change", () => applyFulfil(true));
+$("geoGo").onclick = async () => { try { await ensureMap(); } catch (e){ geoSay(e.message); return; } locate(); };
+function resetGeo(){ geo = {lat: null, lng: null}; if (gmarker){ gmarker.remove(); gmarker = null; } geoSay(""); }
+
 /* ---------- ตะกร้า ---------- */
 function cartInfo(){
   let count = 0, total = 0;
@@ -439,6 +520,8 @@ function renderCheckout(){
   $("cartTotal").textContent = baht(cartInfo().total);
   $("cName").value = localStorage.getItem("cName") || "";
   $("cPhone").value = localStorage.getItem("cPhone") || "";
+  const f = localStorage.getItem("fulfil");
+  if (f === "delivery" && fulfilVal() !== "delivery"){ document.querySelector('input[name="fulfil"][value="delivery"]').checked = true; applyFulfil(false); }
 }
 
 $("cartLines").addEventListener("click", e => {
@@ -457,13 +540,17 @@ $("coSubmit").onclick = async () => {
   if (!/^[0-9+\-\s]{8,15}$/.test(phone)){ $("coErr").textContent = "รูปแบบเบอร์โทรไม่ถูกต้อง"; return; }
   const items = cart.map(l => ({id: l.id, qty: l.qty, opts: l.opts}));
   if (!items.length){ $("coErr").textContent = "ตะกร้าว่างเปล่า"; return; }
+  const delivery = fulfilVal() === "delivery";
+  if (delivery && !validLL(geo.lat, geo.lng)){ $("coErr").textContent = "กรุณาปักหมุดตำแหน่งจัดส่งบนแผนที่ (กดปุ่มใช้ตำแหน่งปัจจุบัน หรือแตะบนแผนที่)"; return; }
   $("coSubmit").disabled = true;
-  const {data, error} = await sb.rpc("create_order", {p_name: name, p_phone: phone, p_note: $("cNote").value, p_items: items});
+  const args = {p_name: name, p_phone: phone, p_note: $("cNote").value, p_items: items};
+  if (delivery){ args.p_fulfil = "delivery"; args.p_lat = geo.lat; args.p_lng = geo.lng; }
+  const {data, error} = await sb.rpc("create_order", args);
   $("coSubmit").disabled = false;
   if (error){ $("coErr").textContent = error.message; return; }
   localStorage.setItem("cName", name); localStorage.setItem("cPhone", phone);
   localStorage.setItem("activeOrder", data.id);
-  cart = []; saveCart(); $("cNote").value = ""; renderMenu();
+  cart = []; saveCart(); $("cNote").value = ""; renderMenu(); resetGeo();
   $("pAmt").value = ""; $("pTime").value = ""; $("pSlip").value = ""; $("preview").classList.add("hidden");
   await openOrder(data.id);
 };
