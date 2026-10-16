@@ -98,6 +98,7 @@
   }
   .lineqty{display:flex;align-items:center;gap:6px}
   .lineqty button{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:#fff;line-height:1}
+  .site-foot{max-width:1100px;margin:24px auto 0;padding:16px;text-align:center;font-size:12px;line-height:1.7;color:#888;border-top:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -206,6 +207,11 @@
 <aside id="side" aria-live="polite"></aside>
 </main>
 
+<footer class="site-foot">
+  <div>ระบบออเดอร์อาหาร | ใช้ในกิจการส่วนตัวเท่านั้น | พัฒนาโดย Sarawut.C</div>
+  <div>&copy; <span id="footYear">2026</span> Sarawut.C. สงวนลิขสิทธิ์ทั้งหมด (All rights reserved.)</div>
+</footer>
+<script>document.getElementById("footYear").textContent = new Date().getFullYear();</script>
 <div class="cartbar hidden" id="cartbar">
   <div class="inner">
     <div><strong id="cbCount">0</strong> รายการ · <strong id="cbTotal">0</strong> บาท</div>
@@ -530,8 +536,8 @@ function renderQueueBoard(){
     ${items.length ? `<ol>${items.map((i, k) => `<li class="${i.status === "preparing" ? "cooking" : ""} ${i.order_no === mine ? "me" : ""}">
         <span class="k">คิวที่ ${k + 1}</span><span class="n">#${i.order_no}</span><span class="st">${i.status === "preparing" ? "กำลังทำ" : "รอคิว"}</span></li>`).join("")}</ol>
       ${queueData.total > items.length ? `<div class="muted" style="margin-top:6px">และอีก ${queueData.total - items.length} ออเดอร์</div>` : ""}`
-      : '<div class="muted" style="text-align:center">แสดงออเดอร์ที่ชำระเงินแล้ว</div>'}
-    <div class="muted" style="margin-top:8px;font-size:12px"></div></div>`;
+      : '<div class="muted" style="text-align:center">ออเดอร์ที่ชำระเงินแล้วจะแสดงที่นี่</div>'}
+    <div class="muted" style="margin-top:8px;font-size:12px">แสดงเฉพาะออเดอร์ที่ชำระเงินแล้ว</div></div>`;
   $("qLeft").innerHTML = board;
   const box = $("side"), old = box.querySelector(".qboard"); if (old) old.remove();   // จอแคบกว่า 1280px: แสดงกระดานคิวไว้บนสุดของแผงขวา
   box.insertAdjacentHTML("afterbegin", board);
