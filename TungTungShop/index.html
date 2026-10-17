@@ -125,8 +125,6 @@
     <div id="menuList"><p class="muted">กำลังโหลดเมนู…</p></div>
     <details class="panel" id="lookup">
       <summary style="cursor:pointer;font-weight:600">เช็คสถานะ / คิวออเดอร์ที่สั่งไปแล้ว</summary>
-      <label for="lkName">ชื่อที่ใช้สั่ง</label>
-      <input id="lkName" autocomplete="name">
       <label for="lkPhone">เบอร์โทรที่ใช้สั่ง</label>
       <input id="lkPhone" type="tel" autocomplete="tel">
       <div class="err" id="lkErr"></div>
@@ -212,7 +210,7 @@
     </div>
 
     <div class="panel">
-      <div class="muted">เปิดดูสถานะจากเครื่องอื่นได้ด้วยชื่อและเบอร์โทรที่ใช้สั่ง หรือแชร์ลิงก์ติดตามนี้</div>
+      <div class="muted">เปิดดูสถานะจากเครื่องอื่นได้ด้วยเบอร์โทรที่ใช้สั่ง หรือแชร์ลิงก์ติดตามนี้</div>
       <button class="btn ghost" id="copyLink" style="width:100%;margin-top:10px">คัดลอกลิงก์ติดตามออเดอร์</button>
     </div>
 
@@ -623,8 +621,8 @@ function renderQueueBoard(){
     ${items.length ? `<ol>${items.map((i, k) => `<li class="${i.status === "preparing" ? "cooking" : ""} ${i.order_no === mine ? "me" : ""}">
         <span class="k">คิวที่ ${k + 1}</span><span class="n">#${i.order_no}</span><span class="st">${i.status === "preparing" ? "กำลังทำ" : "รอคิว"}</span></li>`).join("")}</ol>
       ${queueData.total > items.length ? `<div class="muted" style="margin-top:6px">และอีก ${queueData.total - items.length} ออเดอร์</div>` : ""}`
-      : '<div class="muted" style="text-align:center">แสดงออเดอร์ที่ชำระเงินแล้ว</div>'}
-    <div class="muted" style="margin-top:8px;font-size:12px"></div></div>`;
+      : '<div class="muted" style="text-align:center">ออเดอร์ที่ชำระเงินแล้วจะแสดงที่นี่</div>'}
+    <div class="muted" style="margin-top:8px;font-size:12px">แสดงเฉพาะออเดอร์ที่ชำระเงินแล้ว</div></div>`;
   $("qLeft").innerHTML = board;
   const box = $("side"), old = box.querySelector(".qboard"); if (old) old.remove();   // จอแคบกว่า 1280px: แสดงกระดานคิวไว้บนสุดของแผงขวา
   box.insertAdjacentHTML("afterbegin", board);
@@ -740,14 +738,14 @@ $("copyLink").onclick = async () => {
   catch { prompt("คัดลอกลิงก์นี้", url); }
 };
 $("lkGo").onclick = async () => {
-  const name = $("lkName").value.trim(), phone = $("lkPhone").value.trim();
+  const phone = $("lkPhone").value.trim();
   $("lkErr").textContent = ""; $("lkList").innerHTML = "";
-  if (!name || !phone){ $("lkErr").textContent = "กรุณากรอกชื่อและเบอร์โทร"; return; }
+  if (!/^[0-9+\-\s]{8,15}$/.test(phone)){ $("lkErr").textContent = "กรุณากรอกเบอร์โทรที่ใช้สั่ง"; return; }
   $("lkGo").disabled = true;
-  const {data, error} = await sb.rpc("track_orders", {p_name: name, p_phone: phone});
+  const {data, error} = await sb.rpc("track_orders", {p_phone: phone});
   $("lkGo").disabled = false;
   if (error){ $("lkErr").textContent = "ค้นหาไม่สำเร็จ: " + error.message; return; }
-  if (!data || !data.length){ $("lkErr").textContent = "ไม่พบออเดอร์ ตรวจสอบชื่อและเบอร์โทรอีกครั้ง (ต้องตรงกับที่ใช้ตอนสั่ง)"; return; }
+  if (!data || !data.length){ $("lkErr").textContent = "ไม่พบออเดอร์ ตรวจสอบเบอร์โทรอีกครั้ง (ต้องตรงกับที่ใช้ตอนสั่ง)"; return; }
   if (data.length === 1){ pickOrder(data[0].id); return; }
   $("lkList").innerHTML = '<div class="muted" style="margin-top:12px">พบ ' + data.length + ' ออเดอร์ เลือกที่ต้องการดู</div>' +
     data.map(o => `<button class="btn ghost" style="width:100%;margin-top:8px;text-align:left" data-pick="${esc(o.id)}">
